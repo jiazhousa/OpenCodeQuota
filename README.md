@@ -1,9 +1,52 @@
 # OpenCode Quota
 
-面向本地 OpenCode 的多供应商额度与消费展示插件，正在开发中。
+面向 **Linux / OpenCode 1.18.30 / 标准本地 TUI** 的只读额度插件（独立项目，2026-09-14 自 workbench/91-opencode-quota 迁出）。交付验收状态见 [验收说明](docs/acceptance.md)；类型检查或模拟界面不代表真实供应商认证已通过。
 
-目标：在 TUI 侧边栏展示 GLM Coding Plan、OpenAI Codex OAuth 订阅额度，以及 DeepSeek 余额和 OpenCode 本地消费估算。
+## 功能
 
-工作流规格与实现任务书：`../.specpipe/plans/opencode-channel-quota/`。
+- 会话侧边栏自动显示 GLMCodingPlan、GPT Pro20x 订阅窗口及 DeepSeek 余额；消费估算等完整信息在 `/quota` 明细查看。
+- Quota追加在原生Context/MCP/LSP/Todo/Modified Files之后；订阅额度用水平字符进度条（█填充+░底，宽16）配百分比与重置倒计时，进度由填充长度编码，黑白可读。点击 Quota 标题行可折叠/展开（▾/▸），折叠状态进程内保持。
+- 侧栏标题为Quota，隐藏正常“已更新”、远端/本地更新时间、套餐、DeepSeek消费区与命令提示行；`/quota`明细保留全部诊断与消费信息。缓存/过期、认证错误、部分统计等必要异常提示不会被隐藏。
+- `/quota` 打开可滚动明细，Esc 关闭；`/quota-refresh` 重新识别凭据、刷新远端和校准本地统计，均为本地命令，不发送模型 prompt。
+- 启动与每 15 分钟刷新，独立展示缓存、陈旧、错误与未连接状态。失败不冒充零余额，倒计时归零不自动清空已用额度。
+- 国际 GLM 不支持也不显示；DeepSeek 本地估算不是供应商账单，不包含其他应用消费。
 
-当前提交仅建立独立仓库与 worktree 的文档基线，不包含插件实现。
+## 安装与卸载
+
+1. 将本仓库放到**长期保留的绝对路径**，在该目录执行 `npm ci`。Node/npm 用于安装锁定开发依赖，Bun 由项目内依赖提供，无需全局安装。
+2. 执行 `npm run typecheck`。分发的是源码，没有 `dist`；不要以 npm 包名加载源 TSX，也不要打包另一份 Solid/OpenTUI 运行时。
+3. 在自己的 `tui.json`（默认 `~/.config/opencode/tui.json`，自定义 XDG 时相应调整）根级 **追加** 插件项，保留原有 plugin 与其他设置。例如：
+
+   ```json
+   {
+     "$schema": "https://opencode.ai/tui.json",
+     "plugin": ["file:///home/starlex/project/opencode-quota/src/tui.tsx"]
+   }
+   ```
+
+   上例是结构示例，不要直接覆盖已有文件。入口必须是 `src/tui.tsx`，**不得安装 `tests/smoke/entry.tsx`**。源码目录及其 `node_modules` 必须一直保留，不要指向将被清理的临时 worktree。
+4. **退出并重启 OpenCode**，用默认本地模式打开会话并显示侧边栏（宿主默认快捷键 `<leader>b`）。无需填写插件选项或另存 Key；使用宿主已有连接。
+
+卸载：移除对应 plugin 项，退出并重启。不要删除宿主 auth 或数据库。可选清理插件自己的 `$XDG_STATE_HOME/opencode/channel-quota`（缺省 `~/.local/state/opencode/channel-quota`）缓存。
+
+## 支持边界与安全
+
+- 不支持 attach、显式网络 transport、其他宿主版本、自定义代理域/第三方认证接管。无法确认本地环境时不读取凭据或数据库。
+- 凭据只读，不刷新 OAuth、不写宿主认证，不发送 `/responses` 或其他模型探针。OAuth 过期请通过宿主重新认证；API Key 变更可能需要重启宿主才能生效。
+- 本地数据库在独立 Worker 中只读；按 DeepSeek assistant 消息的最新累计 `cost`、创建时间和现存记录统计。包括归档/子代理；删除会减少估算，fork 复制历史可能使估算偏高；换 Key 不分账。
+- 远端保留原币种，不换汇；本地 USD 基于宿主价格，零成本不证明实际零扣费。
+- 更多路径、数据库多发行渠道冲突、非公开 API 限制见 [兼容说明](docs/compatibility.md)。
+
+## 开发与验证
+
+```bash
+npm run typecheck
+npm run test:unit -- tests/unit tests/ui   # 核心tc：12个（解析/凭据/聚合/挂载渲染）
+# 以下仅由收尾调度者统一执行：
+npm run smoke -- --opencode /绝对路径/opencode
+npm run fence -- --opencode /绝对路径/opencode
+```
+
+smoke 需要 Linux、tmux、目标版本真实可执行文件；不安装这些系统工具，不读真实账号。脚本参数、隔离策略、产物及失败语义见 [验收说明](docs/acceptance.md)。`npm run build` 等同类型检查；`npm test` 是剩余核心 unit/UI，`fence` 顺序包含 build、核心测试和真实宿主的合成凭据 smoke。按用户决策测试已瘦身至核心集，历史详尽测试见 workbench 工作流档案。
+
+本地工作流唯一事实源：[spec](/home/starlex/project/workbench/.specpipe/plans/opencode-channel-quota/spec.md)、[impl](/home/starlex/project/workbench/.specpipe/plans/opencode-channel-quota/impl.md)；[审查档案](/home/starlex/project/workbench/.specpipe/reviews/)。不在源码仓库复制第二套需求文档。

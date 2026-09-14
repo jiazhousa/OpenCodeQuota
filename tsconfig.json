@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "test-fence-reports"]
+}
