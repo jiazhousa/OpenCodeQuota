@@ -58,12 +58,12 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     // 水平字符条：125%（clamp 满）整条 16 个 █ + 英文紧凑倒计时。
     const barRow = lines().find((row) => row.includes("125%"))!;
     expect(barRow).toContain("5h");
-    expect(barRow).toMatch(/█{16}/);
+    expect(barRow).toMatch(/█{12}/);
     expect(barRow).toContain("reset in 1m");
     // 未知值：全 ░ 底条 + — + week 标签 + reset unknown。
     const unknownRow = lines().find((row) => row.includes("reset unknown"))!;
     expect(unknownRow).toContain("week");
-    expect(unknownRow).toMatch(/░{16}/);
+    expect(unknownRow).toMatch(/░{12}/);
     expect(unknownRow).toContain("—");
     // 标签固定 4 列：同渠道 5h 与 week 行的条起始列对齐。
     expect(barRow!.indexOf("█")).toBe(unknownRow!.indexOf("░"));

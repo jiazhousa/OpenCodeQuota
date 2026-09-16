@@ -10,7 +10,8 @@ export interface ViewProps { state: () => ViewState; theme: TuiThemeCurrent }
 // —— 水平字符条（展示反馈迭代）——
 // 条宽 16：filled = round(clamp(0,100)/100 × 条宽) 个 █ + 其余 ░；
 // 仅绘图用 clamp，百分比数字保留原值（>100 原数显示）；null/非法为全 ░ 底条 + —。
-const BAR_WIDTH = 16;
+// 宽度预算：原生侧栏可用约 37 列 = 标签4+1 + 条12+1 + 百分比≤4+1 + 倒计时≤13。
+const BAR_WIDTH = 12;
 
 function barText(value: number | null): string {
   if (value === null || !Number.isFinite(value) || value < 0) return "░".repeat(BAR_WIDTH);
@@ -28,7 +29,8 @@ export function formatCompactReset(resetAt: number | null, now: number): string 
   const minutes = Math.ceil((resetAt - now) / 60000);
   if (minutes < 60) return `reset in ${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `reset in ${hours}h${minutes % 60}m`;
+  // ≥1h 省略分钟段：侧栏概览小时粒度足够，保证整行不超宽被截断。
+  if (hours < 24) return `reset in ${hours}h`;
   return `reset in ${Math.floor(hours / 24)}d${hours % 24}h`;
 }
 
