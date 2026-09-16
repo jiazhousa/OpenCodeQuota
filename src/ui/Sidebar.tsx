@@ -61,7 +61,8 @@ export function ChannelBlock(props: { channel: ChannelView; theme: TuiThemeCurre
     return props.channel.refreshing ? `${CHANNEL_PHASES[props.channel.phase]} · ${REFRESHING_TEXT}` : CHANNEL_PHASES[props.channel.phase];
   };
   return <box flexDirection="column" flexShrink={0} gap={0}>
-    <text fg={props.theme.text}>{CHANNEL_NAMES[props.channel.providerId]}</text>
+    {/* 渠道名后附订阅档位（GLM Coding Plan (Max) / GPT Pro20x (Pro)），对齐上游展示惯例；缺失时不加。 */}
+    <text fg={props.theme.text}>{CHANNEL_NAMES[props.channel.providerId]}{props.channel.snapshot?.plan ? ` (${props.channel.snapshot.plan})` : ""}</text>
     <Show when={statusText()}><text fg={color()}>{statusText()}</text></Show>
     <Show when={props.channel.error}><text fg={props.theme.warning} wrapMode="word">{errorText(props.channel.error)}</text></Show>
     <Show when={props.channel.snapshot}>{(snapshot) => <>

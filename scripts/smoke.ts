@@ -318,7 +318,7 @@ process.exit(exitCode);
     await tm("new-session", "-d", "-s", "quota", "-x", "160", "-y", "80", "-c", join(root, "project"),
       "/usr/bin/env", "-i", ...Object.entries(env).map(([key, value]) => `${key}=${value}`), process.execPath, runner, binary, sessions[0]!);
     await tm("set-option", "-w", "-t", "quota:0", "remain-on-exit", "on");
-    await visible(["Quota Smoke Alpha", "GLM Coding Plan", "GPT Pro20x", "DeepSeek", "5h", "week", "23%", "45%", "12%", "34%", "reset in", "Balance CNY 125.750000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏与凭据组合未就绪", 30000);
+    await visible(["Quota Smoke Alpha", "GLM Coding Plan (Max)", "GPT Pro20x", "DeepSeek", "5h", "week", "23%", "45%", "12%", "34%", "reset in", "Balance CNY 125.750000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏与凭据组合未就绪", 30000);
     await until(async () => hasQuotaTitle(await screen()), "侧栏标题未整行出现 Quota");
     await capture("01-sidebar-160x80");
     const sidebar = await screen();

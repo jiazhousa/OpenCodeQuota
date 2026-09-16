@@ -26,7 +26,7 @@ const mockFetch: Fetch = async (input, init) => {
     if (request.url === "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
       && request.headers.get("authorization") === "synthetic-quota-glm-secret") {
       kind = "glm";
-      body = { success: true, code: 200, data: { limits: [
+      body = { success: true, code: 200, data: { level: "max", limits: [
         { type: "CREDIT_LIMIT", unit: 3, number: 5, percentage: 23, nextResetTime: now + 3600000 },
         { type: "CREDIT_LIMIT", unit: 6, number: 1, percentage: 45, nextResetTime: now + 86400000 },
       ] } };

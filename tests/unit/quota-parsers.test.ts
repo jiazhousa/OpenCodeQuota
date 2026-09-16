@@ -4,19 +4,23 @@ import { parseOpenai } from "../../src/providers/openai.ts";
 import { parseDeepseek } from "../../src/providers/deepseek.ts";
 
 const now = 1800000000000;
-const glm = (limits: unknown) => ({ success: true, code: 200, data: { limits } });
+const glm = (limits: unknown, level?: unknown) => ({ success: true, code: 200, data: { limits, ...(level !== undefined ? { level } : {}) } });
 describe("国内 GLM 解析", () => {
-  test("CREDIT_LIMIT 按单位+数量精确识别，乱序不影响周期，信用值不当 token/金额", () => {
+  test("CREDIT_LIMIT 按单位+数量精确识别，乱序不影响周期，信用值不当 token/金额；data.level 映射订阅档位", () => {
     const snapshot = parseGlm(glm([
       { type: "CREDIT_LIMIT", unit: 6, number: 1, percentage: 35, nextResetTime: now + 86400000, usage: 20000, currentValue: 7000 },
       { type: "CREDIT_LIMIT", unit: 3, number: 5, percentage: 20, nextResetTime: now + 3600000, remaining: 8000 },
       { type: "TOKENS_LIMIT", unit: 6, percentage: 130, nextResetTime: now + 1000 },
       { type: "TOKENS_LIMIT", unit: 3 },
-    ]), now);
+    ], "max"), now);
     expect(snapshot.windows.map((w) => [w.kind, w.label, w.usedPercent, w.resetAt])).toEqual([
       ["week", "周额度", 35, now + 86400000], ["5h", "5 小时", 20, now + 3600000],
       ["week", "周额度", 130, now + 1000], ["5h", "5 小时", null, null],
     ]);
+    expect(snapshot.plan).toBe("Max");
+    expect(parseGlm(glm([{ type: "CREDIT_LIMIT", unit: 3, number: 5 }], "weird-tier"), now).plan).toBe(null);
+    expect(parseGlm(glm([{ type: "CREDIT_LIMIT", unit: 3, number: 5 }], 42), now).plan).toBe(null);
+    expect(parseGlm(glm([{ type: "CREDIT_LIMIT", unit: 3, number: 5 }]), now).plan).toBe(null);
     expect(snapshot.balances).toEqual([]);
     expect(JSON.stringify(snapshot)).not.toContain("currentValue");
     expect(JSON.stringify(snapshot)).not.toContain("remaining");
