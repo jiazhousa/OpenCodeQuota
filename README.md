@@ -4,9 +4,9 @@ A read-only quota sidebar plugin for **Linux / OpenCode 1.x (tested on 1.18.30 /
 
 ## Features
 
-- The session sidebar automatically shows GLM Coding Plan and GPT Pro20x subscription windows plus the DeepSeek balance.
+- The session sidebar automatically shows GLM Coding Plan and GPT Pro20x subscription windows plus the DeepSeek balance, with the subscription tier as a name suffix (`GLM Coding Plan (Max)` / `GPT Pro20x (Pro)`; hidden when the value is unknown).
 - The Quota block is appended after the native Context/MCP/LSP/Todo/Files blocks; subscription quotas use a horizontal character bar (█ filled + ░ base, width 16) with the percentage and a reset countdown. Progress is encoded by fill length and stays readable in monochrome. Click the Quota title row to collapse/expand (▾/▸); the collapsed state is kept in-process only.
-- Normal-state noise stays hidden (per-channel "Updated" label, remote update time, plan, command hints); necessary warnings (cached/stale, auth errors, unavailable, account unavailable) are never hidden.
+- Normal-state noise stays hidden (per-channel "Updated" label, remote update time, command hints); necessary warnings (cached/stale, auth errors, unavailable, account unavailable) are never hidden.
 - `/quota-refresh` re-detects credentials and refreshes remote quotas. It is a local command and never sends a model prompt.
 - Refresh on startup and every 15 minutes, with independent cached / stale / error / not-connected states. A failure never impersonates a zero balance, and a countdown reaching zero never clears the used percentage.
 - International GLM is not supported and not displayed.
@@ -15,7 +15,9 @@ A read-only quota sidebar plugin for **Linux / OpenCode 1.x (tested on 1.18.30 /
 
 ## Install / Uninstall
 
-1. Place this repository at a **long-lived absolute path** and run `npm ci` inside it. Node/npm only install the pinned dev dependencies; Bun is provided by a project devDependency — no global Bun needed.
+Source of the code: `git clone https://github.com/jiazhousa/OpenCodeQuota` (branch `main`, local dev branch `develop` pushes there) or a release source archive from <https://github.com/jiazhousa/OpenCodeQuota/releases>.
+
+1. Place this repository at a **long-lived absolute path** and run `npm ci` inside it. Node/npm only install the pinned dev dependencies; Bun is provided by a project devDependency — no global Bun needed. `npm ci` is required: the TSX imports `@opentui/*` / `solid-js` at runtime and they resolve from this directory's `node_modules`.
 2. Run `npm run typecheck`. Distribution is source code, there is no `dist`; do not load the source TSX as an npm package and do not bundle a second Solid/OpenTUI runtime.
 3. In your own `tui.json` (default `~/.config/opencode/tui.json`; adjust for custom XDG paths), **append** the plugin entry at the root level and keep existing plugin entries and other settings. Example:
 
