@@ -18,4 +18,4 @@
 - 注释与文档中文；保留已有注释。无授权不 commit/push、不改全局配置、不读真实 auth/DB/config、不发真实供应商请求。
 - 固定依赖与 file URL 源码分发；不自行升级版本、引入依赖或打包第二套运行时。`skipLibCheck` 仅屏蔽第三方声明冲突，不能当作真实挂载验证。
 
-唯一任务书与工作流档案位于 `/home/starlex/project/workbench/.specpipe/plans/opencode-channel-quota/`；兼容与验收限制分别见 `docs/compatibility.md`、`docs/acceptance.md`。2026-09-14用户已单独授权本次安装和真实GET联调；真实查询始终不属于自动fence，后续代理不得将本次授权扩大为任意凭据读取/模型请求或永久联调授权。
+开发过程档案（spec/impl/审查报告）保留在开发者内部工作区 workbench 的 `.specpipe/`，不属于本项目运行依赖；本仓库自包含。兼容与验收限制分别见 `docs/compatibility.md`、`docs/acceptance.md`。历史真实GET联调为一次性授权；真实查询始终不属于自动fence，后续代理不得将历史授权扩大为任意凭据读取/模型请求或永久联调授权。
