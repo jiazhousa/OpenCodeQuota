@@ -66,7 +66,7 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     expect(unknownRow).toMatch(/░{16}/);
     expect(unknownRow).toContain("—");
     // DeepSeek 余额英文化保留在侧栏。
-    expect(sidebar).toContain("Balance USD 12.34567890123456789");
+    expect(sidebar).toContain("Balance CNY 12.34567890123456789");
     // 点击标题折叠：仅剩标题（+异常提示），渠道/余额收起。
     const title = screen.renderer.root.findDescendantById("quota-sidebar-title")!;
     await screen.mockMouse.click(title.screenX + 2, title.screenY);

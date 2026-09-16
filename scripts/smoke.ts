@@ -318,7 +318,7 @@ process.exit(exitCode);
     await tm("new-session", "-d", "-s", "quota", "-x", "160", "-y", "80", "-c", join(root, "project"),
       "/usr/bin/env", "-i", ...Object.entries(env).map(([key, value]) => `${key}=${value}`), process.execPath, runner, binary, sessions[0]!);
     await tm("set-option", "-w", "-t", "quota:0", "remain-on-exit", "on");
-    await visible(["Quota Smoke Alpha", "GLM Coding Plan", "GPT Pro20x", "DeepSeek", "5h", "week", "23%", "45%", "12%", "34%", "reset in", "Balance USD 123.450000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏与凭据组合未就绪", 30000);
+    await visible(["Quota Smoke Alpha", "GLM Coding Plan", "GPT Pro20x", "DeepSeek", "5h", "week", "23%", "45%", "12%", "34%", "reset in", "Balance CNY 125.750000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏与凭据组合未就绪", 30000);
     await until(async () => hasQuotaTitle(await screen()), "侧栏标题未整行出现 Quota");
     await capture("01-sidebar-160x80");
     const sidebar = await screen();
@@ -349,7 +349,7 @@ process.exit(exitCode);
     await keys("-l", "Quota Smoke Beta");
     await sleep(500);
     await keys("Enter");
-    await visible(["Quota Smoke Beta", "Balance USD 123.450000"], "切换会话后侧栏或余额异常");
+    await visible(["Quota Smoke Beta", "Balance CNY 125.750000"], "切换会话后侧栏或余额异常");
     await until(async () => {
       const text = await screen();
       return !contains(text, "Quota Smoke Alpha") && !contains(text, "Sessions");
@@ -359,7 +359,7 @@ process.exit(exitCode);
     await until(async () => !hasQuotaTitle(await screen()), "隐藏侧栏失败");
     await capture("05-sidebar-hidden");
     await keys("F6");
-    await visible(["Balance USD 123.450000"], "恢复侧栏失败");
+    await visible(["Balance CNY 125.750000"], "恢复侧栏失败");
     await until(async () => hasQuotaTitle(await screen()), "恢复侧栏后标题未出现");
   });
   await step("深浅主题与窄屏恢复", async () => {
@@ -367,7 +367,7 @@ process.exit(exitCode);
     requireThat(dark !== "[]", "PTY 没有捕获真实颜色序列");
     await keys("F8");
     await until(async () => colors(await tm("capture-pane", "-p", "-e", "-t", "quota:0.0")) !== dark, "主题切换未改变真实颜色");
-    await visible(["Balance USD 123.450000"], "浅色主题内容丢失");
+    await visible(["Balance CNY 125.750000"], "浅色主题内容丢失");
     await until(async () => hasQuotaTitle(await screen()), "浅色主题侧栏标题丢失");
     await capture("06-theme-switched");
     // 详情页已随消费统计移除：窄屏只验证侧栏隐藏期间宿主不崩溃、恢复宽屏后组件完整。
@@ -381,7 +381,7 @@ process.exit(exitCode);
     }
     await tm("resize-window", "-t", "quota:0", "-x", "160", "-y", "80");
     await keys("F6");
-    await visible(["Balance USD 123.450000"], "恢复宽屏后组件失效");
+    await visible(["Balance CNY 125.750000"], "恢复宽屏后组件失效");
     await until(async () => hasQuotaTitle(await screen()), "恢复宽屏后侧栏标题未出现");
   });
   await step("正常退出与零新增消息", async () => {

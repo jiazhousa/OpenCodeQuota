@@ -41,7 +41,7 @@ const mockFetch: Fetch = async (input, init) => {
     } else if (request.url === "https://api.deepseek.com/user/balance"
       && request.headers.get("authorization") === "Bearer synthetic-quota-deepseek-secret") {
       kind = "deepseek";
-      body = { is_available: true, balance_infos: [{ currency: "USD", total_balance: "123.450000" }] };
+      body = { is_available: true, balance_infos: [{ currency: "CNY", total_balance: "125.750000" }] };
     }
   }
   audit(kind);

@@ -49,7 +49,7 @@ export function viewFixture(): ViewState {
           { id: "primary_window", kind: "5h", label: "5 小时", usedPercent: 125, resetAt: NOW + 60000 },
           { id: "secondary_window", kind: "week", label: "周额度", usedPercent: null, resetAt: null },
         ],
-        balances: providerId === "deepseek" ? [{ currency: "USD", amount: "12.34567890123456789" }, { currency: "CNY", amount: "0.01" }] : [],
+        balances: providerId === "deepseek" ? [{ currency: "CNY", amount: "12.34567890123456789" }] : [],
       },
     })),
   };
