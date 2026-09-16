@@ -35,14 +35,13 @@ export function formatCompactReset(resetAt: number | null, now: number): string 
 }
 
 // 单行窗口行：标签 + 16 列 █░ 条 + 百分比 + 紧凑倒计时，整行不超 37 列。
-// 条整体一色：primary（≥100 用 warning，未知值用 textMuted），无需 span 分段。
+// 条统一 primary（用户决策：≥100 不再变 warning 色），未知值 textMuted，无需 span 分段。
 function WindowRow(props: { window: Window; theme: TuiThemeCurrent; now: number; id: string }) {
   const usable = () => {
     const value = props.window.usedPercent;
     return value !== null && Number.isFinite(value) && value >= 0;
   };
-  const barColor = () => !usable() ? props.theme.textMuted
-    : (props.window.usedPercent as number) >= 100 ? props.theme.warning : props.theme.primary;
+  const barColor = () => !usable() ? props.theme.textMuted : props.theme.primary;
   // 标签固定 4 列（最长 "week"），条与数值在各窗口行之间列对齐。
   return <text id={props.id} wrapMode="none" flexShrink={0}>
     <span style={{ fg: props.theme.text }}>{`${COMPACT_WINDOW_LABELS[props.window.kind].padEnd(4)} `}</span>
