@@ -65,6 +65,8 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     expect(unknownRow).toContain("week");
     expect(unknownRow).toMatch(/░{16}/);
     expect(unknownRow).toContain("—");
+    // 标签固定 4 列：同渠道 5h 与 week 行的条起始列对齐。
+    expect(barRow!.indexOf("█")).toBe(unknownRow!.indexOf("░"));
     // DeepSeek 余额英文化保留在侧栏。
     expect(sidebar).toContain("Balance CNY 12.34567890123456789");
     // 点击标题折叠：仅剩标题（+异常提示），渠道/余额收起。

@@ -41,8 +41,9 @@ function WindowRow(props: { window: Window; theme: TuiThemeCurrent; now: number;
   };
   const barColor = () => !usable() ? props.theme.textMuted
     : (props.window.usedPercent as number) >= 100 ? props.theme.warning : props.theme.primary;
+  // 标签固定 4 列（最长 "week"），条与数值在各窗口行之间列对齐。
   return <text id={props.id} wrapMode="none" flexShrink={0}>
-    <span style={{ fg: props.theme.text }}>{`${COMPACT_WINDOW_LABELS[props.window.kind]} `}</span>
+    <span style={{ fg: props.theme.text }}>{`${COMPACT_WINDOW_LABELS[props.window.kind].padEnd(4)} `}</span>
     <span style={{ fg: barColor() }}>{barText(props.window.usedPercent)}</span>
     <span style={{ fg: props.theme.text }}>{` ${formatPercent(props.window.usedPercent)} `}</span>
     <span style={{ fg: props.theme.textMuted }}>{formatCompactReset(props.window.resetAt, props.now)}</span>
