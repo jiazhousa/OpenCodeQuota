@@ -1,21 +1,26 @@
-# OpenCode Quota 开发约定
+# OpenCode Quota — Development Conventions
 
-## 模块职责
+## Module responsibilities
 
-- `src/core/contracts.ts`：三渠道、脱敏状态、错误、Clock 与服务端口的公共契约；跨块修改先交调度者协调。
-- `src/providers/`：宿主有效凭据解析、官方 GET、解析器、身份隔离缓存、重试与刷新调度。不得把原始 auth/Provider/HTTP 异常传到 UI。
-- `src/spend/`：路径判定、Worker RPC、只读 SQLite 元数据读取与按消息 id 聚合。主线程不扫描数据库；不迁移或修改宿主库。
-- `src/runtime/`：锁版/本地验证、事件投影与控制器生命周期。
-- `src/ui/`、`src/tui.tsx`：生产侧栏/滚动详情、命令和宿主挂载；只消费安全快照，使用宿主 Solid/OpenTUI 身份。
-- `tests/`：合成夹具、单元与渲染测试；`tests/smoke/entry.tsx` 只替换生产 factory 的远端 fetch，禁止正常安装。
-- `scripts/`：无真实凭据 smoke 与统一 fence，失败不跳过、不伪造界面。
+- `src/core/contracts.ts`: shared contracts for the three channels, sanitized state, errors, Clock and service ports; coordinate with the orchestrator before cross-block changes.
+- `src/providers/`: host-effective credential resolution, official GETs, parsers, identity-isolated cache, retry and refresh scheduling. Raw auth/Provider/HTTP exceptions must never reach the UI.
+- `src/runtime/`: local/version verification and the controller lifecycle (provider scheduling, 30s `now` tick for reset countdowns, manual refresh, dispose).
+- `src/ui/`, `src/tui.tsx`: production sidebar, the single `/quota-refresh` command and host mounting; consumes safe snapshots only, uses the host's Solid/OpenTUI identity.
+- `tests/`: synthetic fixtures, unit and rendering tests; `tests/smoke/entry.tsx` only replaces the production factory's remote fetch and must never be installed.
+- `scripts/`: credential-free smoke and the unified fence; failures are never skipped or faked.
+- Removed in the 2026-09-16 round: `src/spend/` (local spend statistics worker) and `src/ui/Details.tsx` (the `/quota` details page). Recoverable from git history; do not reintroduce without a new task brief.
 
-## 最小验证
+## Language conventions
 
-- 所有源码/测试/脚本变更：`npm run typecheck`。
-- 按改动块追加：`npm run test:unit -- tests/unit/<对应文件>.test.ts`；UI 对应 `tests/ui/quota.test.tsx`。
-- 不自行扩大到全量/E2E/fence；由 Oracle 统一运行 `npm run fence -- --opencode /绝对路径/opencode`，核对 `test-fence-reports/summary.txt`。
-- 注释与文档中文；保留已有注释。无授权不 commit/push、不改全局配置、不读真实 auth/DB/config、不发真实供应商请求。
-- 固定依赖与 file URL 源码分发；不自行升级版本、引入依赖或打包第二套运行时。`skipLibCheck` 仅屏蔽第三方声明冲突，不能当作真实挂载验证。
+- UI copy and user-facing strings (sidebar, toasts, command titles, error messages): English, from the static maps in `src/core/contracts.ts` / `src/ui/format.ts` — never concatenate provider, SDK or auth-file detail into them.
+- Code comments and internal test/smoke report labels: Chinese; preserve existing comments.
 
-开发过程档案（spec/impl/审查报告）保留在开发者内部工作区 workbench 的 `.specpipe/`，不属于本项目运行依赖；本仓库自包含。兼容与验收限制分别见 `docs/compatibility.md`、`docs/acceptance.md`。历史真实GET联调为一次性授权；真实查询始终不属于自动fence，后续代理不得将历史授权扩大为任意凭据读取/模型请求或永久联调授权。
+## Minimal verification
+
+- All source/test/script changes: `npm run typecheck`.
+- Per changed block add: `npm run test:unit -- tests/unit/<file>.test.ts`; for UI, `tests/ui/quota.test.tsx`.
+- Do not expand to full runs/E2E/fence on your own; the orchestrator runs `npm run fence -- --opencode /absolute/path/to/opencode` and checks `test-fence-reports/summary.txt`.
+- No unauthorized commit/push, no global-config changes, no reading real auth/DB/config, no real provider requests.
+- Pinned dependencies and file-URL source distribution; do not upgrade versions, add dependencies or bundle a second runtime on your own. `skipLibCheck` only suppresses third-party declaration conflicts and is not a mount verification.
+
+Development-process archives (spec/impl/review reports) live in the developer's internal workbench `.specpipe/` and are not a runtime dependency of this repository. Compatibility and acceptance limits: `docs/compatibility.md`, `docs/acceptance.md`. Past real-GET checks were one-time authorizations; real queries are never part of automated fence, and later agents must not widen historical authorization into arbitrary credential reads, model requests or permanent integration rights.

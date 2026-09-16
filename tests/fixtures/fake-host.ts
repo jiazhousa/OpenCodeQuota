@@ -6,7 +6,6 @@ import { createSlot, createSolidSlotRegistry, type JSX } from "@opentui/solid";
 import { batch, createSignal } from "solid-js";
 import type { Clock, HostProviders, TimeoutHandle, ViewState } from "../../src/core/contracts.ts";
 import { PROVIDER_IDS } from "../../src/core/contracts.ts";
-import { createLoadingSpendSnapshot } from "../../src/spend/aggregate.ts";
 
 export const NOW = new Date(2026, 8, 13, 12).getTime();
 export const SENTINEL = "synthetic-secret-DO-NOT-RENDER";
@@ -53,7 +52,6 @@ export function viewFixture(): ViewState {
         balances: providerId === "deepseek" ? [{ currency: "USD", amount: "12.34567890123456789" }, { currency: "CNY", amount: "0.01" }] : [],
       },
     })),
-    spend: { ...createLoadingSpendSnapshot(NOW), phase: "partial", today: 0.000012, week: 1.25, month: 2, total: 3.25, updatedAt: NOW, validCount: 3, zeroCount: 1, unknownCount: 1 },
   };
 }
 
@@ -123,7 +121,7 @@ export function createFakeHost(options: { renderer?: CliRenderer; baseUrl?: stri
     keymap: { registerLayer(layer: Layer) { layers.push(layer); return () => {}; } },
     ui: { dialog, toast: (toast: TuiToast) => toasts.push(toast) },
   };
-  // 仅补宿主壳，不替代 Sidebar/Details。任何越出已声明 API 的访问立即失败。
+  // 仅补宿主壳，不替代 Sidebar。任何越出已声明 API 的访问立即失败。
   const api = new Proxy(usedApi, { get(target, key) {
     if (key in target) return Reflect.get(target, key);
     throw new Error(`测试未提供宿主字段：${String(key)}`);

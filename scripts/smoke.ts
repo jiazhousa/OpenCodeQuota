@@ -10,9 +10,9 @@ const sentinels = ["synthetic-quota-glm-secret", "synthetic-quota-deepseek-secre
   "synthetic-quota-account-id", "synthetic-quota-refresh-never-use"];
 const checks = new Map<string, string>([
   ["依赖与目标版本", "NOT_RUN"], ["config/auth/env 与原生 OAuth provider.list", "NOT_RUN"],
-  ["宿主建会话与合成 DB", "NOT_RUN"], ["真实 PTY 自动侧栏与 Worker", "NOT_RUN"],
-  ["quota 详情与 ESC", "NOT_RUN"], ["quota-refresh 三渠道 GET", "NOT_RUN"],
-  ["切换会话与隐藏侧栏", "NOT_RUN"], ["深浅主题与窄屏滚动", "NOT_RUN"],
+  ["宿主建会话与合成 DB", "NOT_RUN"], ["真实 PTY 自动侧栏", "NOT_RUN"],
+  ["quota-refresh 三渠道 GET", "NOT_RUN"],
+  ["切换会话与隐藏侧栏", "NOT_RUN"], ["深浅主题与窄屏恢复", "NOT_RUN"],
   ["正常退出与零新增消息", "NOT_RUN"], ["安全日志/缓存/请求审计", "NOT_RUN"], ["清理", "NOT_RUN"],
 ]);
 class SmokeFailure extends Error {}
@@ -105,15 +105,14 @@ async function visible(parts: string[], label: string, timeout?: number) {
     return parts.every((part) => contains(text, part));
   }, label, timeout);
 }
-async function slash(name: "quota" | "quota-refresh") {
+async function slash(name: "quota-refresh") {
   await keys("-l", `/${name}`);
   // 确认是已注册的本地 slash 建议才按 Enter，避免未知命令变为用户 prompt。
   await until(async () => {
     const text = await screen();
-    const title = name === "quota" ? "查看 Quota" : "刷新 Quota";
     // 窄屏宿主会隐藏建议说明；要求命令在有左右边框的菜单行中，不能把输入框自身当建议。
     const menuRow = new RegExp(`^\\s*┃\\s*/${name}\\s+.*┃\\s*$`);
-    return contains(text, title) || text.split("\n").some((line) => menuRow.test(line));
+    return contains(text, "Refresh Quota") || text.split("\n").some((line) => menuRow.test(line));
   }, "未出现本地 slash 建议，拒绝提交输入");
   await keys("Enter");
 }
@@ -302,7 +301,7 @@ try {
       baseline = dbRows(db);
     } finally { db.close(); }
   });
-  await step("真实 PTY 自动侧栏与 Worker", async () => {
+  await step("真实 PTY 自动侧栏", async () => {
     socket = join(root, "tmux.sock");
     tmuxStarted = true;
     // tmux 3.2a 没有 pane_dead_status；由透明的 PTY 子进程包装器记录真实退出码。
@@ -319,7 +318,7 @@ process.exit(exitCode);
     await tm("new-session", "-d", "-s", "quota", "-x", "160", "-y", "80", "-c", join(root, "project"),
       "/usr/bin/env", "-i", ...Object.entries(env).map(([key, value]) => `${key}=${value}`), process.execPath, runner, binary, sessions[0]!);
     await tm("set-option", "-w", "-t", "quota:0", "remain-on-exit", "on");
-    await visible(["Quota Smoke Alpha", "GLM Coding Plan", "GPT Pro20x", "DeepSeek", "23%", "45%", "12%", "34%", "USD 123.450000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏/凭据/Worker 组合未就绪", 30000);
+    await visible(["Quota Smoke Alpha", "GLM Coding Plan", "GPT Pro20x", "DeepSeek", "5h", "week", "23%", "45%", "12%", "34%", "reset in", "Balance USD 123.450000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏与凭据组合未就绪", 30000);
     await until(async () => hasQuotaTitle(await screen()), "侧栏标题未整行出现 Quota");
     await capture("01-sidebar-160x80");
     const sidebar = await screen();
@@ -330,26 +329,18 @@ process.exit(exitCode);
     requireThat(contextRow >= 0 && todoRow >= 0 && quotaRow >= 0, "侧栏缺少原生 Context/Todo 或 Quota 区块");
     // 宿主按 order 升序渲染：原生标记区块在上，Quota(600) 在最后。
     requireThat(contextRow < quotaRow && todoRow < quotaRow, "原生区块未排在 Quota 之前");
-    // 展示反馈：水平字符条真实渲染（█/░ 块字符），侧栏无冗余正常状态、更新时间、本地消费与命令提示。
+    // 展示反馈：水平字符条真实渲染（█/░ 块字符），侧栏无冗余正常状态、更新时间与命令提示。
     requireThat(/[█░]/.test(sidebar), "Quota 水平条未渲染 █/░ 块字符");
-    for (const redundant of ["已更新", "远端更新", "本地更新", "套餐", "账户可用", "本地消费", "今日", "本周", "本月", "/quota-refresh"]) {
-      requireThat(!contains(sidebar, redundant), `侧栏出现冗余正常状态、更新时间、消费明细或命令提示：${redundant}`);
+    for (const redundant of ["Updated", "Remote updated", "Local updated", "Plan:", "Account available", "Local spend", "Today", "This week", "This month", "/quota-refresh"]) {
+      requireThat(!contains(sidebar, redundant), `侧栏出现冗余正常状态、更新时间或命令提示：${redundant}`);
     }
     requireThat((await requests()).length === 3, "启动不是恰好三个 mock GET");
-  });
-  await step("quota 详情与 ESC", async () => {
-    await slash("quota");
-    // 侧栏消费区块已移除，Worker/消费证明迁到本详情步骤断言。
-    await visible(["Quota 与本地消费", "今日 USD 0.75", "本周 USD 0.75", "本月 USD 0.75", "累计 USD 0.75", "fork 复制历史可能使估算偏高"], "详情未显示生产组件、消费明细与累计口径");
-    await capture("02-details");
-    await keys("Escape");
-    await until(async () => !contains(await screen(), "Quota 与本地消费"), "ESC 未关闭详情");
   });
   await step("quota-refresh 三渠道 GET", async () => {
     await sleep(3200);
     await slash("quota-refresh");
     await until(async () => (await requests()).length === 6, "手动刷新没有重新查询全部三渠道");
-    await visible(["刷新已完成"], "手动刷新缺少完成反馈");
+    await visible(["Quota refreshed"], "手动刷新缺少完成反馈");
     await capture("03-refreshed");
   });
   await step("切换会话与隐藏侧栏", async () => {
@@ -358,7 +349,7 @@ process.exit(exitCode);
     await keys("-l", "Quota Smoke Beta");
     await sleep(500);
     await keys("Enter");
-    await visible(["Quota Smoke Beta", "USD 123.450000"], "切换会话后侧栏或余额异常");
+    await visible(["Quota Smoke Beta", "Balance USD 123.450000"], "切换会话后侧栏或余额异常");
     await until(async () => {
       const text = await screen();
       return !contains(text, "Quota Smoke Alpha") && !contains(text, "Sessions");
@@ -368,38 +359,29 @@ process.exit(exitCode);
     await until(async () => !hasQuotaTitle(await screen()), "隐藏侧栏失败");
     await capture("05-sidebar-hidden");
     await keys("F6");
-    await visible(["USD 123.450000"], "恢复侧栏失败");
+    await visible(["Balance USD 123.450000"], "恢复侧栏失败");
     await until(async () => hasQuotaTitle(await screen()), "恢复侧栏后标题未出现");
   });
-  await step("深浅主题与窄屏滚动", async () => {
+  await step("深浅主题与窄屏恢复", async () => {
     const dark = colors(await tm("capture-pane", "-p", "-e", "-t", "quota:0.0"));
     requireThat(dark !== "[]", "PTY 没有捕获真实颜色序列");
     await keys("F8");
     await until(async () => colors(await tm("capture-pane", "-p", "-e", "-t", "quota:0.0")) !== dark, "主题切换未改变真实颜色");
-    await visible(["USD 123.450000"], "浅色主题内容丢失");
+    await visible(["Balance USD 123.450000"], "浅色主题内容丢失");
     await until(async () => hasQuotaTitle(await screen()), "浅色主题侧栏标题丢失");
     await capture("06-theme-switched");
-    // 窄屏宿主侧栏是固定 42 列浮层；先隐藏再操作 prompt，不拿被遮挡的自动完成猜成功。
+    // 详情页已随消费统计移除：窄屏只验证侧栏隐藏期间宿主不崩溃、恢复宽屏后组件完整。
     await keys("F6");
     await until(async () => !hasQuotaTitle(await screen()), "窄屏准备时隐藏侧栏失败");
     for (const width of [42, 24]) {
       await tm("resize-window", "-t", "quota:0", "-x", String(width), "-y", "24");
       await sleep(500);
-      await slash("quota");
-      await visible(["Quota 与本地消费"], "窄屏详情未打开");
-      await capture(`07-details-${width}-top`);
-      for (let index = 0; index < 100; index++) {
-        await keys("Down"); await sleep(30);
-        if (index < 2) await capture(`scroll-${width}-${index}`);
-      }
-      await until(async () => (await screen()).replace(/\s/g, "").includes("到达重置时间不会自动将已用额度清零"), "窄屏滚动无法到达生产明细底部");
-      await capture(`08-details-${width}-bottom`);
-      await keys("Escape");
-      await until(async () => !contains(await screen(), "Quota 与本地消费"), "窄屏 ESC 失败");
+      await until(async () => !hasQuotaTitle(await screen()), "窄屏下侧栏应保持隐藏");
+      await capture(`07-narrow-${width}`);
     }
     await tm("resize-window", "-t", "quota:0", "-x", "160", "-y", "80");
     await keys("F6");
-    await visible(["USD 123.450000"], "恢复宽屏后组件失效");
+    await visible(["Balance USD 123.450000"], "恢复宽屏后组件失效");
     await until(async () => hasQuotaTitle(await screen()), "恢复宽屏后侧栏标题未出现");
   });
   await step("正常退出与零新增消息", async () => {

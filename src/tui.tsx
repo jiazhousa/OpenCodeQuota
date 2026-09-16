@@ -4,7 +4,6 @@ import type { Fetch } from "./core/contracts.ts";
 import { createQuotaController } from "./runtime/controller.ts";
 import { createHostPort } from "./runtime/host.ts";
 import { Sidebar } from "./ui/Sidebar.tsx";
-import { Details } from "./ui/Details.tsx";
 
 export interface QuotaPluginDependencies { fetch?: Fetch }
 
@@ -20,14 +19,9 @@ export function createQuotaPlugin(dependencies: QuotaPluginDependencies = {}): T
         sidebar_content: () => <Sidebar state={controller.state} theme={api.theme.current} />,
       } });
       api.keymap.registerLayer({ commands: [
-        { name: "quota.show", title: "查看 Quota", category: "额度", namespace: "palette", slashName: "quota", run() {
-          if (api.lifecycle.signal.aborted) return;
-          api.ui.dialog.replace(() => <Details state={controller.state} theme={api.theme.current} />);
-          api.ui.dialog.setSize("large");
-        } },
-        { name: "quota.refresh", title: "刷新 Quota", category: "额度", namespace: "palette", slashName: "quota-refresh", async run() {
+        { name: "quota.refresh", title: "Refresh Quota", category: "Quota", namespace: "palette", slashName: "quota-refresh", async run() {
           await controller.refresh();
-          if (!api.lifecycle.signal.aborted) api.ui.toast({ variant: "info", message: "刷新已完成，各渠道与本地统计状态请查看额度详情" });
+          if (!api.lifecycle.signal.aborted) api.ui.toast({ variant: "info", message: "Quota refreshed" });
         } },
       ] });
     },

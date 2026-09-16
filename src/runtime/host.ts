@@ -1,7 +1,7 @@
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
 import type { HostPort, LocalCheckResult } from "../core/contracts.ts";
 
-type HostApi = Pick<TuiPluginApi, "client" | "event">;
+type HostApi = Pick<TuiPluginApi, "client">;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 // 唯一受限的内部 SDK 读取：不复制 config，也不读取认证头或其他配置。
@@ -49,22 +49,6 @@ export function createHostPort(api: HostApi, argv: readonly string[] = process.a
         // 不将 SDK 异常（可能含 URL、请求头和凭据）跨过边界。
         throw { code: "host_unavailable" };
       }
-    },
-    subscribeCost(onChange) {
-      const message = (id: unknown) => {
-        if (typeof id === "string" && id.length > 0) onChange({ kind: "message", id });
-      };
-      const disposers = [
-        api.event.on("message.updated", (event) => message(event.properties.info.id)),
-        api.event.on("message.removed", (event) => message(event.properties.messageID)),
-        api.event.on("session.deleted", (event) => {
-          const id = event.properties.sessionID;
-          if (typeof id === "string" && id.length > 0) onChange({ kind: "session", id });
-        }),
-        api.event.on("server.connected", () => onChange({ kind: "reset" })),
-        api.event.on("server.instance.disposed", () => onChange({ kind: "reset" })),
-      ];
-      return () => { for (const dispose of disposers) dispose(); };
     },
   };
 }

@@ -8,34 +8,27 @@ export const PROVIDER_IDS = [
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
-// 文案只能来自静态映射，不拼接供应商、SDK、认证文件或数据库异常原文。
+// 文案只能来自静态映射，不拼接供应商、SDK 或认证文件异常原文。
 export const SAFE_ERROR_MESSAGES = {
-  aborted: "操作已取消",
-  local_unsupported: "仅支持标准本地 TUI，不支持远程或 attach 模式",
-  version_unsupported: "仅支持 OpenCode 1.x",
-  host_unavailable: "无法读取宿主状态",
-  credentials_unavailable: "无法读取有效凭据，请检查宿主连接",
-  host_restart_required: "凭据已变化，请重启 OpenCode 后重试",
-  unsupported_provider: "不支持此自定义供应商连接",
-  unsupported_endpoint: "不支持此自定义端点或模型认证配置",
-  unsupported_auth: "此认证方式不支持订阅额度查询",
-  auth_expired: "登录态已过期，请通过宿主重新连接",
-  account_unidentified: "无法识别订阅账号，请通过宿主重新连接",
-  auth_error: "认证失败，请检查宿主连接",
-  network_error: "网络请求失败",
-  timeout: "请求超时",
-  rate_limited: "请求受限，请在冷却结束后重试",
-  http_error: "供应商请求失败",
-  response_too_large: "响应超过安全大小限制",
-  schema_error: "供应商响应格式无法识别",
-  path_unavailable: "无法确定本地存储路径",
-  database_ambiguous: "存在不明确的数据库，请使用宿主 OPENCODE_DB 指定路径",
-  database_unavailable: "本地数据库不可读",
-  database_schema_error: "本地数据库格式不受支持",
-  database_busy: "本地数据库繁忙，请稍后重试",
-  worker_unavailable: "本地消费统计不可用",
-  worker_timeout: "本地消费统计延迟，请稍后校准",
-  internal_error: "暂时无法完成操作",
+  aborted: "Operation cancelled",
+  local_unsupported: "Only the standard local TUI is supported",
+  version_unsupported: "Only OpenCode 1.x is supported",
+  host_unavailable: "Host state unavailable",
+  credentials_unavailable: "No valid credentials; check the host connection",
+  host_restart_required: "Credentials changed; restart OpenCode and retry",
+  unsupported_provider: "Unsupported custom provider connection",
+  unsupported_endpoint: "Unsupported custom endpoint or model auth config",
+  unsupported_auth: "This auth method does not support quota queries",
+  auth_expired: "Sign-in expired; reconnect via the host",
+  account_unidentified: "Subscription account unidentified; reconnect via the host",
+  auth_error: "Authentication failed; check the host connection",
+  network_error: "Network request failed",
+  timeout: "Request timed out",
+  rate_limited: "Rate limited; retry after the cooldown",
+  http_error: "Provider request failed",
+  response_too_large: "Response exceeds the safe size limit",
+  schema_error: "Unrecognized provider response format",
+  internal_error: "Operation could not be completed",
 } as const;
 
 export type SafeErrorCode = keyof typeof SAFE_ERROR_MESSAGES;
@@ -90,25 +83,6 @@ export interface ChannelView {
   lastAttemptAt?: number;
 }
 
-export type SpendPhase = "loading" | "ready" | "partial" | "stale" | "error";
-
-export interface SpendSnapshot {
-  phase: SpendPhase;
-  currency: "USD";
-  today: number | null;
-  week: number | null;
-  month: number | null;
-  total: number | null;
-  updatedAt?: number;
-  timezone: string;
-  periodStart: { day: number; week: number; month: number };
-  validCount: number;
-  invalidCount: number;
-  unknownCount: number;
-  zeroCount: number;
-  error?: SafeError;
-}
-
 export type LocalCheckResult =
   | { ok: true }
   | { ok: false; error: SafeError };
@@ -118,10 +92,9 @@ export type LocalStatus =
   | { phase: "ready" }
   | { phase: "unsupported" | "error"; error: SafeError };
 
-// 这是唯一视图边界，不接纳原始 Provider、认证对象或 Worker 元数据。
+// 这是唯一视图边界，不接纳原始 Provider 或认证对象。
 export interface ViewState {
   channels: ChannelView[];
-  spend: SpendSnapshot;
   now: number;
   localStatus: LocalStatus;
 }
@@ -135,11 +108,6 @@ export interface Clock {
   clearTimeout(handle: TimeoutHandle): void;
 }
 
-export type CostChange =
-  | { kind: "message"; id: string }
-  | { kind: "session"; id: string }
-  | { kind: "reset" };
-
 // 使用锁版 SDK 的成功响应 data，不能误用同名的请求参数 ProviderListData。
 // 该原始数据仅在宿主适配与凭据服务之间流动，不能进入 ViewState。
 export type HostProviders = ProviderListResponses[200];
@@ -147,7 +115,6 @@ export type HostProviders = ProviderListResponses[200];
 export interface HostPort {
   checkLocal(signal: AbortSignal): Promise<LocalCheckResult>;
   readProviders(signal: AbortSignal): Promise<HostProviders>;
-  subscribeCost(onChange: (change: CostChange) => void): Dispose;
 }
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -194,21 +161,3 @@ export interface ProviderServiceOptions {
 }
 
 export type ProviderServiceFactory = (options: ProviderServiceOptions) => ProviderService;
-
-export interface SpendPort {
-  start(): Promise<void>;
-  change(change: CostChange): void;
-  reconcile(): Promise<void>;
-  tick(now: number): void;
-  dispose(): void;
-}
-
-export interface SpendOptions {
-  dbPath: string;
-  clock: Clock;
-  signal: AbortSignal;
-  // 只发送脱敏统计快照，不暴露 SQL、消息正文或 Worker RPC。
-  onChange(snapshot: SpendSnapshot): void;
-}
-
-export type SpendFactory = (options: SpendOptions) => SpendPort;

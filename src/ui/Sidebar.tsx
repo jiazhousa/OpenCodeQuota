@@ -3,7 +3,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { TuiThemeCurrent } from "@opencode-ai/plugin/tui";
 import { PROVIDER_IDS } from "../core/contracts.ts";
 import type { ChannelView, ViewState, Window } from "../core/contracts.ts";
-import { CHANNEL_NAMES, CHANNEL_PHASES, SPEND_PHASES, errorText, formatPercent, formatReset, formatTime, formatUsd, progressWidth } from "./format.ts";
+import { CHANNEL_NAMES, CHANNEL_PHASES, REFRESHING_TEXT, errorText, formatPercent } from "./format.ts";
 
 export interface ViewProps { state: () => ViewState; theme: TuiThemeCurrent }
 
@@ -18,18 +18,18 @@ function barText(value: number | null): string {
   return "█".repeat(filled) + "░".repeat(BAR_WIDTH - filled);
 }
 
-// 侧栏窗口行的紧凑标签；详情仍用适配器规范化的完整 label。
-const COMPACT_WINDOW_LABELS: Record<Window["kind"], string> = { "5h": "5h", week: "周", mcp: "未知", unknown: "未知" };
+// 侧栏窗口行的紧凑英文标签；持久快照内的适配器 label 仍为内部规范化值，不在此展示。
+const COMPACT_WINDOW_LABELS: Record<Window["kind"], string> = { "5h": "5h", week: "week", mcp: "n/a", unknown: "n/a" };
 
 // 紧凑重置倒计时：沿用既有 ceil 分钟与日历无关剩余时长语义。
 export function formatCompactReset(resetAt: number | null, now: number): string {
-  if (resetAt === null || !Number.isFinite(resetAt)) return "重置未知";
-  if (resetAt <= now) return "待刷新";
+  if (resetAt === null || !Number.isFinite(resetAt)) return "reset unknown";
+  if (resetAt <= now) return "due, refresh";
   const minutes = Math.ceil((resetAt - now) / 60000);
-  if (minutes < 60) return `${minutes}m重置`;
+  if (minutes < 60) return `reset in ${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h${minutes % 60}m重置`;
-  return `${Math.floor(hours / 24)}d${hours % 24}h重置`;
+  if (hours < 24) return `reset in ${hours}h${minutes % 60}m`;
+  return `reset in ${Math.floor(hours / 24)}d${hours % 24}h`;
 }
 
 // 单行窗口行：标签 + 16 列 █░ 条 + 百分比 + 紧凑倒计时，整行不超 37 列。
@@ -49,39 +49,28 @@ function WindowRow(props: { window: Window; theme: TuiThemeCurrent; now: number;
   </text>;
 }
 
-export function ChannelBlock(props: { channel: ChannelView; theme: TuiThemeCurrent; now: number; details?: boolean }) {
+export function ChannelBlock(props: { channel: ChannelView; theme: TuiThemeCurrent; now: number }) {
   const color = () => props.channel.phase === "error" ? props.theme.error
     : ["cached", "stale", "unsupported"].includes(props.channel.phase) ? props.theme.warning : props.theme.textMuted;
-  // 侧栏隐藏 ready 的「已更新」；ready+刷新中 只显示「刷新中」，其余状态完整保留。
+  // 侧栏隐藏 ready 的「Updated」；ready+刷新中 只显示「Refreshing」，其余状态完整保留。
   const statusText = () => {
-    if (!props.details && props.channel.phase === "ready") return props.channel.refreshing ? "刷新中" : "";
-    return props.channel.refreshing ? `${CHANNEL_PHASES[props.channel.phase]} · 刷新中` : CHANNEL_PHASES[props.channel.phase];
+    if (props.channel.phase === "ready") return props.channel.refreshing ? REFRESHING_TEXT : "";
+    return props.channel.refreshing ? `${CHANNEL_PHASES[props.channel.phase]} · ${REFRESHING_TEXT}` : CHANNEL_PHASES[props.channel.phase];
   };
   return <box flexDirection="column" flexShrink={0} gap={0}>
     <text fg={props.theme.text}>{CHANNEL_NAMES[props.channel.providerId]}</text>
     <Show when={statusText()}><text fg={color()}>{statusText()}</text></Show>
     <Show when={props.channel.error}><text fg={props.theme.warning} wrapMode="word">{errorText(props.channel.error)}</text></Show>
     <Show when={props.channel.snapshot}>{(snapshot) => <>
-      <Show when={props.details && snapshot().plan}><text fg={props.theme.textMuted}>套餐：{snapshot().plan}</text></Show>
-      <Show when={!props.details}>
-        {/* 每渠道窗口纵向排列（5h/周各一行），MCP 窗口仅在详情展示。 */}
-        <For each={snapshot().windows.filter((window) => window.kind !== "mcp")}>{(window) =>
-          <WindowRow id={`quota-bar-${props.channel.providerId}-${window.id}`} window={window} theme={props.theme} now={props.now} />}
-        </For>
-      </Show>
-      <Show when={props.details}><For each={snapshot().windows}>{(window) => <box flexDirection="column" flexShrink={0}>
-        <text fg={props.theme.text}>{window.label} 已用 {formatPercent(window.usedPercent)}</text>
-        <box height={1} width="100%" backgroundColor={props.theme.backgroundElement}>
-          <box height={1} width={progressWidth(window.usedPercent)} backgroundColor={window.usedPercent !== null && window.usedPercent >= 100 ? props.theme.warning : props.theme.primary} />
-        </box>
-        <text fg={props.theme.textMuted}>{formatReset(window.resetAt, props.now)}</text>
-      </box>}</For></Show>
-      <Show when={props.channel.providerId !== "deepseek" && snapshot().windows.length === 0}><text fg={props.theme.textMuted}>额度窗口：—</text></Show>
-      <For each={snapshot().balances}>{(balance) => <text fg={props.theme.text}>余额 {balance.currency} {balance.amount}</text>}</For>
-      <Show when={props.channel.providerId === "deepseek" && snapshot().balances.length === 0}><text fg={props.theme.textMuted}>余额：—</text></Show>
-      {/* 侧栏仅保留故障语义的「账户不可用」，不展示「账户可用」。 */}
-      <Show when={props.details ? snapshot().available !== null : snapshot().available === false}><text fg={props.theme.textMuted}>{snapshot().available ? "账户可用" : "账户不可用"}</text></Show>
-      <Show when={props.details}><text fg={props.theme.textMuted}>远端更新：{formatTime(snapshot().fetchedAt)}</text></Show>
+      {/* 每渠道窗口纵向排列（5h/week 各一行），MCP 窗口不展示。 */}
+      <For each={snapshot().windows.filter((window) => window.kind !== "mcp")}>{(window) =>
+        <WindowRow id={`quota-bar-${props.channel.providerId}-${window.id}`} window={window} theme={props.theme} now={props.now} />}
+      </For>
+      <Show when={props.channel.providerId !== "deepseek" && snapshot().windows.length === 0}><text fg={props.theme.textMuted}>Windows: —</text></Show>
+      <For each={snapshot().balances}>{(balance) => <text fg={props.theme.text}>Balance {balance.currency} {balance.amount}</text>}</For>
+      <Show when={props.channel.providerId === "deepseek" && snapshot().balances.length === 0}><text fg={props.theme.textMuted}>Balance: —</text></Show>
+      {/* 仅保留故障语义的「Account unavailable」，不展示「账户可用」。 */}
+      <Show when={snapshot().available === false}><text fg={props.theme.textMuted}>Account unavailable</text></Show>
     </>}</Show>
   </box>;
 }
@@ -93,30 +82,11 @@ export function LocalStatus(props: ViewProps) {
     return "error" in current ? errorText(current.error) : "";
   };
   return <>
-    <Show when={status().phase === "checking"}><text fg={props.theme.textMuted}>检查本地宿主…</text></Show>
+    <Show when={status().phase === "checking"}><text fg={props.theme.textMuted}>Checking host…</text></Show>
     <Show when={status().phase === "error" || status().phase === "unsupported"}>
       <text fg={props.theme.warning} wrapMode="word">{message()}</text>
     </Show>
   </>;
-}
-
-export function SpendBlock(props: ViewProps & { details?: boolean }) {
-  const spend = () => props.state().spend;
-  // 侧栏已不再渲染消费区（用户精简指令）；本组件仅供 Details 使用，始终带状态标记。
-  const title = () => `本地消费 · ${SPEND_PHASES[spend().phase]}`;
-  return <box flexDirection="column" flexShrink={0}>
-    <text fg={props.theme.textMuted}>{title()}</text>
-    <Show when={spend().error}><text fg={props.theme.warning}>{errorText(spend().error)}</text></Show>
-    {/* 原生文本合成在「宽字符行恰好占满可用宽」时会把相邻兄弟文本行内续排（24 列可复现，
-        与卡片布局无关）；gap 强制三行金额独立成行，保证任意宽度下「分别一行」成立。 */}
-    <box flexDirection="column" gap={1}>
-      <text fg={props.theme.text}>今日 {formatUsd(spend().today)}</text>
-      <text fg={props.theme.text}>本周 {formatUsd(spend().week)}</text>
-      <text fg={props.theme.text}>本月 {formatUsd(spend().month)}</text>
-    </box>
-    <Show when={props.details}><text fg={props.theme.text}>累计 {formatUsd(spend().total)}</text></Show>
-    <Show when={props.details}><text fg={props.theme.textMuted}>本地更新：{formatTime(spend().updatedAt)}</text></Show>
-  </box>;
 }
 
 export function Sidebar(props: ViewProps) {
@@ -135,7 +105,7 @@ export function Sidebar(props: ViewProps) {
     </box>
     <Show when={!collapsed()}>
       <LocalStatus state={props.state} theme={props.theme} />
-      <Show when={props.state().localStatus.phase === "ready" && channels().length === 0}><text fg={props.theme.textMuted}>尚未连接支持的渠道</text></Show>
+      <Show when={props.state().localStatus.phase === "ready" && channels().length === 0}><text fg={props.theme.textMuted}>No supported channels</text></Show>
       <For each={channels()}>{(channel) => <box flexDirection="column" flexShrink={0}>
         <ChannelBlock channel={channel} theme={props.theme} now={props.state().now} />
       </box>}</For>
