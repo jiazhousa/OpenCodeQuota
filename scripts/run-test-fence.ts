@@ -22,7 +22,7 @@ process.on("SIGINT", interrupt);
 process.on("SIGTERM", interrupt);
 
 async function summary(status: "RUNNING" | "PASS" | "FAIL") {
-  const text = [`${status}：OpenCode Channel Quota fence`, `目标宿主版本：1.18.30（实测值及挂载证据见 smoke 报告）`,
+  const text = [`${status}：OpenCode Channel Quota fence`, `目标宿主版本：动态探测（实测值及挂载证据见 smoke 报告；运行时门为 1.x.y）`,
     `本轮目录：${directory}`, `时间：${new Date().toISOString()}`,
     ...results.map((item) => `${item.name}：${item.status}；exit=${item.exitCode}；${item.durationMs}ms；${item.reason}`),
     "真实供应商账号查询：NOT_RUN（未授权，不属于自动 fence；mock PASS 不是账号认证通过）", ""].join("\n");

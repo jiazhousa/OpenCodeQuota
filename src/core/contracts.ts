@@ -12,7 +12,7 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 export const SAFE_ERROR_MESSAGES = {
   aborted: "操作已取消",
   local_unsupported: "仅支持标准本地 TUI，不支持远程或 attach 模式",
-  version_unsupported: "仅支持 OpenCode 1.18.30",
+  version_unsupported: "仅支持 OpenCode 1.x",
   host_unavailable: "无法读取宿主状态",
   credentials_unavailable: "无法读取有效凭据，请检查宿主连接",
   host_restart_required: "凭据已变化，请重启 OpenCode 后重试",

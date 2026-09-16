@@ -4,7 +4,8 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
-const targetVersion = "1.18.30";
+// 目标宿主版本在"依赖与目标版本"步骤内由 command()（带超时与退出码处理）动态探测赋值；
+// 不在顶层裸 spawn：宿主后台进程可能持有 stdout 使 text() 永久等待。
 const sentinels = ["synthetic-quota-glm-secret", "synthetic-quota-deepseek-secret", "synthetic-quota-openai-access",
   "synthetic-quota-account-id", "synthetic-quota-refresh-never-use"];
 const checks = new Map<string, string>([
@@ -36,6 +37,7 @@ let server: ReturnType<typeof Bun.spawn> | undefined;
 const serverOutputs: string[] = [];
 const serverDrains: Promise<void>[] = [];
 let observedVersion = "NOT_RUN";
+let targetVersion = "NOT_RUN";
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 // 所有异常对外只使用静态说明；合成密钥出现在产物也必须失败，脱敏不把失败变成成功。
@@ -231,7 +233,8 @@ try {
     requireThat(tmux && Bun.which("env", { PATH: "/usr/bin:/bin" }), "缺少 tmux 或系统 env");
     const version = await command([binary, "--version"]);
     observedVersion = version.stdout.trim();
-    requireThat(version.code === 0 && observedVersion === targetVersion, "目标宿主必须精确为 1.18.30");
+    targetVersion = observedVersion;
+    requireThat(version.code === 0 && /^1\.\d+\.\d+$/.test(observedVersion), "目标宿主必须是 1.x.y 且可执行");
     const tmuxVersion = await command([tmux, "-V"]);
     requireThat(tmuxVersion.code === 0, "tmux 不可用");
     await artifact("dependencies.txt", `opencode=${observedVersion}\n${tmuxVersion.stdout}`);

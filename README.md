@@ -1,6 +1,6 @@
 # OpenCode Quota
 
-面向 **Linux / OpenCode 1.18.30 / 标准本地 TUI** 的只读额度插件（独立项目，2026-09-14 自 workbench/91-opencode-quota 迁出）。交付验收状态见 [验收说明](docs/acceptance.md)；类型检查或模拟界面不代表真实供应商认证已通过。
+面向 **Linux / OpenCode 1.x（实测1.18.30/1.18.31） / 标准本地 TUI** 的只读额度插件（独立项目，2026-09-14 自 workbench/91-opencode-quota 迁出）。交付验收状态见 [验收说明](docs/acceptance.md)；类型检查或模拟界面不代表真实供应商认证已通过。
 
 ## 功能
 

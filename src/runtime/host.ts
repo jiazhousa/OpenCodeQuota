@@ -31,7 +31,8 @@ export function createHostPort(api: HostApi, argv: readonly string[] = process.a
         const response = await api.client.global.health({ signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
         if (signal.aborted) return { ok: false, error: { code: "aborted" } };
         if (!response.data || response.error) return { ok: false, error: { code: "host_unavailable" } };
-        if (response.data.version !== "1.18.30") return { ok: false, error: { code: "version_unsupported" } };
+        // 放宽为 v1.*.*（用户决策）：自动升级不断供；数据库/凭据/端点各有独立 schema 探测兜底，契约变化时降级为明确错误而非误显示。
+        if (!/^1\.\d+\.\d+$/.test(response.data.version)) return { ok: false, error: { code: "version_unsupported" } };
         verified = true;
         return { ok: true };
       } catch {

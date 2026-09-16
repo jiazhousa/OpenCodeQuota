@@ -8,14 +8,14 @@
 
 - B4 最小自验：2026-09-13 `npm run typecheck` 通过（含 scripts 与 smoke 入口）；不构成运行时挂载证明。
 - 最终全量unit/UI：**106/106通过，0失败**，含点阵位序/渲染字符域、原生排序、窄屏卡片、精简与详情分流回归；build通过。质量复审仅新增测试断言、生产代码不变，追加单UI文件复验11/11通过（1647断言），按规则不重复全量fence。
-- OpenCode 1.18.30真实宿主+合成凭据+mock供应商smoke：**11项检查全部PASS**，包含真实侧栏、命令、会话切换、42/24列滚动、零新增消息、安全审计与退出码。
+- OpenCode 1.18.31真实宿主+合成凭据+mock供应商smoke：**11项检查全部PASS**（smoke-KGJVBx，含真实侧栏、命令、会话切换、42/24列滚动、零新增消息、安全审计与退出码；1.18.30历史证据smoke-RFVmg6等同）。
 - 最新完整fence与Checker质量门revision5均PASS，工作流DONE。历史证据随项目迁移至本目录 `test-fence-reports/`：`fence-qpGcmH/summary.txt`、`smoke-MPfxwR/summary.txt`（点阵环版本实拍，后续水平条版本见`smoke-2SbmkR`）。质量报告位于workbench `.specpipe/reviews/opencode-channel-quota-quality-gate-revision-5.md`；此前revision3等报告保留为历史。
 - 真实GLM/OpenAI/DeepSeek查询：2026-09-14用户单独授权安装和联调，复用现有连接的三个官方GET均200，无模型生成/OAuth刷新；记录仅含成功状态与字段结构，不保存个人额度、余额或凭据。GLM实测为CREDIT_LIMIT+unit/number，与旧TOKENS_LIMIT不同，已补兼容及两项回归并通过完整复验。**自动fence仍只用mock，不自动重复真实请求；日志中的“未授权”专指自动fence的真实查询权限，不否定这次独立联调授权**。
 - 交付质量门须 Checker 与本轮 fence 双 PASS。任何未运行、依赖缺失、超时、挂载失败、字段不匹配或泄露都是阻塞，不允许删减验收后宣称通过。
 
 ## 命令和依赖
 
-从长期保留的源码仓库根目录运行，先按 lock 执行 `npm ci`。Node/npm、项目内 Bun 为已有依赖；额外运行工具仅为 Linux 的 **tmux 与 `/usr/bin/env`**，以及目标 OpenCode **1.18.30** 可执行文件。不安装全局 Bun，不自动安装宿主/tmux，不修改真实配置。
+从长期保留的源码仓库根目录运行，先按 lock 执行 `npm ci`。Node/npm、项目内 Bun 为已有依赖；额外运行工具仅为 Linux 的 **tmux 与 `/usr/bin/env`**，以及目标 OpenCode 1.x.y 可执行文件。不安装全局 Bun，不自动安装宿主/tmux，不修改真实配置。
 
 ```bash
 npm run typecheck
