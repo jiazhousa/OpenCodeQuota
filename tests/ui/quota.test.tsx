@@ -37,7 +37,7 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     const Slot = host.Slot!;
     await render(() => <Slot name="sidebar_content" mode="append" session_id="session-a" />, screen.renderer);
     await flushPromises(); await screen.renderOnce();
-    expect(screen.captureCharFrame()).toContain("Quota ▾");
+    expect(screen.captureCharFrame()).toContain("▼ Quota");
     expect(host.registry!.getPluginErrors()).toHaveLength(0);
   });
 
@@ -49,9 +49,9 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     await screen.renderOnce();
     const lines = () => screen.captureCharFrame().split("\n");
     const sidebarText = () => lines().join("\n");
-    // 默认展开标题与三渠道排序（GLM 词间两个空格）。
+    // 默认展开标题（箭头前置范式：▼ Quota）与三渠道排序（GLM 词间两个空格）。
     const sidebar = sidebarText();
-    expect(sidebar).toContain("Quota ▾");
+    expect(sidebar).toContain("▼ Quota");
     expect(sidebar.indexOf("GLM Coding Plan")).toBeGreaterThanOrEqual(0);
     expect(sidebar.indexOf("GLM Coding Plan")).toBeLessThan(sidebar.indexOf("GPT Pro20x"));
     expect(sidebar.indexOf("GPT Pro20x")).toBeLessThan(sidebar.indexOf("DeepSeek"));
@@ -74,7 +74,7 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     await screen.mockMouse.click(title.screenX + 2, title.screenY);
     await screen.renderOnce();
     const collapsed = sidebarText();
-    expect(collapsed).toContain("Quota ▸");
+    expect(collapsed).toContain("▶ Quota");
     expect(collapsed).not.toContain("GLM Coding Plan");
     expect(collapsed).not.toContain("GPT Pro20x");
     expect(collapsed).not.toContain("DeepSeek");

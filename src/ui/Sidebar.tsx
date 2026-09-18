@@ -103,8 +103,10 @@ export function Sidebar(props: ViewProps) {
     return phase === "error" || phase === "unsupported";
   };
   return <box id="quota-sidebar" flexDirection="column" flexShrink={0} gap={1}>
-    <box id="quota-sidebar-title" flexDirection="row" onMouseDown={() => setCollapsed((value) => !value)}>
-      <text fg={props.theme.text}>{collapsed() ? "Quota ▸" : "Quota ▾"}</text>
+    {/* 标题范式对齐宿主 feature-plugins/sidebar/{todo,mcp}.tsx：箭头独立 text 前置（▼ 展开 / ▶ 折叠）+ <b> 加粗标题 + gap={1} 间隔。 */}
+    <box id="quota-sidebar-title" flexDirection="row" gap={1} onMouseDown={() => setCollapsed((value) => !value)}>
+      <text fg={props.theme.text}>{collapsed() ? "▶" : "▼"}</text>
+      <text fg={props.theme.text}><b>Quota</b></text>
     </box>
     <Show when={!collapsed()}>
       <LocalStatus state={props.state} theme={props.theme} />
