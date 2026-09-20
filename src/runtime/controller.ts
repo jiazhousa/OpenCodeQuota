@@ -1,8 +1,7 @@
 import { createRoot, createSignal } from "solid-js";
 import { PROVIDER_IDS } from "../core/contracts.ts";
-import type { Clock, Env, Fetch, HostPort, ProviderService, ProviderServiceFactory, QuotaCache, ReadAuth, SafeError, TimeoutHandle, ViewState } from "../core/contracts.ts";
+import type { Clock, Env, Fetch, HostPort, ProviderService, ProviderServiceFactory, QuotaCache, SafeError, TimeoutHandle, ViewState } from "../core/contracts.ts";
 import { createQuotaCache } from "../providers/cache.ts";
-import { readAuthFile } from "../providers/credentials.ts";
 import { createProviderService } from "../providers/service.ts";
 
 export const platformClock: Clock = {
@@ -17,7 +16,6 @@ export interface ControllerOptions {
   fetch?: Fetch;
   env?: Env;
   clock?: Clock;
-  readAuth?: ReadAuth;
   cache?: QuotaCache;
   providerFactory?: ProviderServiceFactory;
 }
@@ -63,8 +61,8 @@ export function createQuotaController(options: ControllerOptions) {
         if (!local.ok) { hostError(local.error); return; }
         // 缓存目录不可用时 createQuotaCache 自身降级为空操作，不阻断远端额度。
         providers = (options.providerFactory ?? createProviderService)({
-          host: options.host, clock, env, signal: lifetime.signal,
-          readAuth: options.readAuth ?? readAuthFile, fetch: options.fetch ?? globalThis.fetch,
+          host: options.host, clock, signal: lifetime.signal,
+          fetch: options.fetch ?? globalThis.fetch,
           cache: options.cache ?? createQuotaCache({ env, clock }),
           onChange: (channels) => update({ channels }),
         });

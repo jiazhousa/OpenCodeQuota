@@ -18,12 +18,13 @@ export function createQuotaPlugin(dependencies: QuotaPluginDependencies = {}): T
       api.slots.register({ order: 600, slots: {
         sidebar_content: () => <Sidebar state={controller.state} theme={api.theme.current} />,
       } });
-      api.keymap.registerLayer({ commands: [
-        { name: "quota.refresh", title: "Refresh Quota", category: "Quota", namespace: "palette", slashName: "quota-refresh", async run() {
-          await controller.refresh();
-          if (!api.lifecycle.signal.aborted) api.ui.toast({ variant: "info", message: "Quota refreshed" });
-        } },
-      ] });
+      api.command.register(() => [
+        { title: "Refresh Quota", value: "quota.refresh", category: "Quota", slash: { name: "quota-refresh" },
+          async onSelect() {
+            await controller.refresh();
+            if (!api.lifecycle.signal.aborted) api.ui.toast({ variant: "info", message: "Quota refreshed" });
+          } },
+      ]);
     },
   };
 }

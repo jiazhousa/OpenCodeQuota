@@ -67,14 +67,13 @@ export function themeFixture(mode: "dark" | "light" = "dark"): TuiThemeCurrent {
   return new Proxy(values, { get: (target, key) => key === "thinkingOpacity" ? 0.5 : Reflect.get(target, key) ?? text }) as TuiThemeCurrent;
 }
 
-type Layer = Parameters<TuiPluginApi["keymap"]["registerLayer"]>[0];
-type Command = NonNullable<Layer["commands"]>[number];
+type Command = ReturnType<Parameters<TuiPluginApi["command"]["register"]>[0]>[number];
 export function createFakeHost(options: { renderer?: CliRenderer; baseUrl?: string; version?: string; providers?: HostProviders; theme?: TuiThemeCurrent; sdkFailure?: boolean } = {}) {
   const life = new AbortController();
   const disposers = new Set<() => void | Promise<void>>();
   const listeners = new Map<string, Set<(event: Event) => void>>();
   const requests: Array<{ method: string; url: string }> = [];
-  const layers: Layer[] = [];
+  const commands: Command[] = [];
   const registrations: TuiSlotPlugin[] = [];
   const toasts: TuiToast[] = [];
   const [dialogRender, setDialogRender] = createSignal<(() => JSX.Element) | undefined>();
@@ -87,15 +86,14 @@ export function createFakeHost(options: { renderer?: CliRenderer; baseUrl?: stri
       requests.push({ method: input.method, url: input.url });
       if (options.sdkFailure) throw new Error(SENTINEL);
       const path = new URL(input.url).pathname;
-      if (path === "/global/health") return Response.json({ healthy: true, version: options.version ?? "1.18.30" });
-      if (path === "/provider") return Response.json(options.providers ?? { all: [], connected: [], default: {} });
+      if (path === "/api/provider") return Response.json({ location: {}, data: options.providers ?? [] });
       throw new Error("测试禁止其他 SDK 请求");
     }) as typeof fetch,
   });
   const event: TuiPluginApi["event"] = { on(type, handler) {
     const handlers = listeners.get(type) ?? new Set();
     listeners.set(type, handlers);
-    const wrapped = handler as (event: Event) => void;
+    const wrapped = handler as unknown as (event: Event) => void;
     handlers.add(wrapped);
     return () => { handlers.delete(wrapped); };
   } };
@@ -118,7 +116,8 @@ export function createFakeHost(options: { renderer?: CliRenderer; baseUrl?: stri
       if (registry) disposers.add(registry.register({ ...plugin, id }));
       return id;
     } },
-    keymap: { registerLayer(layer: Layer) { layers.push(layer); return () => {}; } },
+    app: { version: options.version ?? "2.0.11" },
+    command: { register(callback: () => Command[]) { commands.push(...callback()); return () => {}; }, trigger: () => {}, show: () => {} },
     ui: { dialog, toast: (toast: TuiToast) => toasts.push(toast) },
   };
   // 仅补宿主壳，不替代 Sidebar。任何越出已声明 API 的访问立即失败。
@@ -127,17 +126,17 @@ export function createFakeHost(options: { renderer?: CliRenderer; baseUrl?: stri
     throw new Error(`测试未提供宿主字段：${String(key)}`);
   } }) as unknown as TuiPluginApi;
   return {
-    api, requests, layers, registrations, toasts, dialogRender, registry,
+    api, requests, commands, registrations, toasts, dialogRender, registry,
     Slot: registry ? createSlot(registry) : undefined,
     listeners,
     emit(event: { type: string; properties: unknown }) {
       for (const handler of listeners.get(event.type) ?? []) handler(event as Event);
     },
     async command(name: string) {
-      const command = layers.flatMap((layer) => [...layer.commands ?? []]).find((command) => command.name === name);
+      const command = commands.find((command) => command.value === name);
       if (!command) throw new Error("命令未注册");
       // 回调只执行插件本地逻辑，不提供会话写入或模型调用上下文。
-      await command.run?.({} as Parameters<NonNullable<Command["run"]>>[0]);
+      await command.onSelect?.();
     },
     async dispose() {
       life.abort();

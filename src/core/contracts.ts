@@ -1,5 +1,3 @@
-import type { ProviderListResponses } from "@opencode-ai/sdk/v2/types";
-
 export const PROVIDER_IDS = [
   "zhipuai-coding-plan",
   "openai",
@@ -12,7 +10,7 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 export const SAFE_ERROR_MESSAGES = {
   aborted: "Operation cancelled",
   local_unsupported: "Only the standard local TUI is supported",
-  version_unsupported: "Only OpenCode 1.x is supported",
+  version_unsupported: "Only OpenCode 2.x is supported",
   host_unavailable: "Host state unavailable",
   credentials_unavailable: "No valid credentials; check the host connection",
   host_restart_required: "Credentials changed; restart OpenCode and retry",
@@ -108,9 +106,19 @@ export interface Clock {
   clearTimeout(handle: TimeoutHandle): void;
 }
 
-// 使用锁版 SDK 的成功响应 data，不能误用同名的请求参数 ProviderListData。
+// 宿主 provider 条目形态（/api/provider 响应 data 元素）：settings 为配置唯一事实源。
 // 该原始数据仅在宿主适配与凭据服务之间流动，不能进入 ViewState。
-export type HostProviders = ProviderListResponses[200];
+export interface V2ProviderEntry {
+  id: string;
+  integrationID?: string;
+  name: string;
+  // 宿主激活状态；enabled 表示该 provider 已连接可用。
+  activation?: string;
+  package?: string;
+  settings?: Record<string, unknown>;
+}
+
+export type HostProviders = ReadonlyArray<V2ProviderEntry>;
 
 export interface HostPort {
   checkLocal(signal: AbortSignal): Promise<LocalCheckResult>;
@@ -118,11 +126,6 @@ export interface HostPort {
 }
 
 export type Env = Readonly<Record<string, string | undefined>>;
-
-// 只读认证文件适配：返回最多 1 MiB 文本，文件不存在为 null。
-// 显式 OPENCODE_AUTH_CONTENT 的优先级与解析由凭据模块处理，不回退文件。
-// 原文只在凭据模块内部短暂使用，失败不得将原文放入异常或状态。
-export type ReadAuth = (path: string, signal: AbortSignal) => Promise<string | null>;
 
 // 仅取 fetch 的调用签名，不要求 mock 实现 Bun 的附加静态方法。
 export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -151,8 +154,6 @@ export interface ProviderService {
 export interface ProviderServiceOptions {
   host: HostPort;
   clock: Clock;
-  env: Env;
-  readAuth: ReadAuth;
   fetch: Fetch;
   cache: QuotaCache;
   signal: AbortSignal;

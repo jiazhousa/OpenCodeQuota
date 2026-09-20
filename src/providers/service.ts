@@ -1,7 +1,7 @@
 import { PROVIDER_IDS } from "../core/contracts.ts";
 import type { ChannelView, HostProviders, ProviderServiceFactory, QuotaSnapshot, SafeError, TimeoutHandle } from "../core/contracts.ts";
-import { readCredentialsAuth, resolveCredential } from "./credentials.ts";
-import type { AuthState, Credential, CredentialResult } from "./credentials.ts";
+import { resolveCredential } from "./credentials.ts";
+import type { Credential, CredentialResult } from "./credentials.ts";
 import { parserError, requestQuota, retryable } from "./http.ts";
 import { parseGlm } from "./glm.ts";
 import { parseOpenai } from "./openai.ts";
@@ -16,19 +16,18 @@ interface Channel {
   flight?: Promise<void>;
   cooldownUntil: number;
   dueAt: number;
-  hadApiAuth: boolean;
 }
 const unsupported = (error: SafeError) => ["unsupported_provider", "unsupported_endpoint", "unsupported_auth"].includes(error.code);
 export const createProviderService: ProviderServiceFactory = (options) => {
-  const { host, clock, env, readAuth, fetch, cache, signal, onChange } = options;
+  const { host, clock, fetch, cache, signal, onChange } = options;
   const lifetime = new AbortController();
   const channels: Channel[] = PROVIDER_IDS.map((providerId) => ({
     view: { providerId, connected: false, phase: "disconnected", refreshing: false },
-    generation: 0, controller: new AbortController(), cooldownUntil: 0, dueAt: 0, hadApiAuth: false,
+    generation: 0, controller: new AbortController(), cooldownUntil: 0, dueAt: 0,
   }));
   let disposed = false;
   let timer: TimeoutHandle | undefined;
-  let discovery: Promise<{ providers: HostProviders; auth: AuthState } | SafeError> | undefined;
+  let discovery: Promise<{ providers: HostProviders } | SafeError> | undefined;
   let manualFlight: Promise<void> | undefined;
   let manualUntil = 0;
   let discoveryEpoch = 0;
@@ -57,10 +56,8 @@ export const createProviderService: ProviderServiceFactory = (options) => {
         if (disposed) return { code: "aborted" } as SafeError;
         const providers = await host.readProviders(lifetime.signal);
         if (disposed) return { code: "aborted" } as SafeError;
-        if (!Array.isArray(providers.all) || !Array.isArray(providers.connected)) return { code: "host_unavailable" } as SafeError;
-        const hasTarget = PROVIDER_IDS.some((id) => providers.connected.includes(id) && providers.all.some((p) => p.id === id));
-        const auth = hasTarget ? await readCredentialsAuth(env, readAuth, lifetime.signal) : { ok: true, entries: {} } as const;
-        return { providers, auth };
+        if (!Array.isArray(providers)) return { code: "host_unavailable" } as SafeError;
+        return { providers };
       } catch { return { code: "host_unavailable" } as SafeError; }
     })().finally(() => { discovery = undefined; });
     return discovery;
@@ -68,7 +65,6 @@ export const createProviderService: ProviderServiceFactory = (options) => {
   const apply = (channel: Channel, result: CredentialResult) => {
     if (!result.connected) {
       isolate(channel);
-      channel.hadApiAuth = false;
       channel.view = { providerId: channel.view.providerId, connected: false, phase: "disconnected", refreshing: false };
       return;
     }
@@ -138,7 +134,7 @@ export const createProviderService: ProviderServiceFactory = (options) => {
           const latest = await discover();
           if (!valid(channel, generation) || epoch !== discoveryEpoch) return;
           if ("code" in latest) { failure(channel, latest); return; }
-          const resolved = resolveCredential(channel.view.providerId, latest.providers, latest.auth, clock.now(), channel.hadApiAuth);
+          const resolved = resolveCredential(channel.view.providerId, latest.providers);
           if (!resolved.connected || "error" in resolved) { apply(channel, resolved); emit(); return; }
           if (resolved.credential.identityHash !== credential.identityHash) {
             // 保持当前单 flight 所有权，先隔离旧身份，再消耗同一轮的剩余一次预算。
@@ -195,12 +191,11 @@ export const createProviderService: ProviderServiceFactory = (options) => {
     for (const channel of channels) {
       const wasDue = clock.now() >= Math.max(channel.dueAt, channel.cooldownUntil);
       let resolved: CredentialResult;
-      try { resolved = resolveCredential(channel.view.providerId, latest.providers, latest.auth, clock.now(), channel.hadApiAuth); }
+      try { resolved = resolveCredential(channel.view.providerId, latest.providers); }
       catch { resolved = { connected: true, error: { code: "credentials_unavailable" } }; }
       const oldHash = channel.credential?.identityHash;
       apply(channel, resolved);
       // 删除认证后仍保留已见过的来源证据，直到断连或宿主重启，避免下轮又使用旧 key。
-      if (resolved.connected && latest.auth.ok && latest.auth.entries[channel.view.providerId]?.type === "api") channel.hadApiAuth = true;
       if (channel.view.snapshot && clock.now() - channel.view.snapshot.fetchedAt >= PERIOD) channel.view.phase = "stale";
       if (channel.credential && (reason !== "auto" || wasDue || channel.credential.identityHash !== oldHash)) pending.push(query(channel));
       if (!channel.flight && (wasDue || !channel.credential)) channel.dueAt = clock.now() + PERIOD;

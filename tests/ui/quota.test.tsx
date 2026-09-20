@@ -31,8 +31,8 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     expect(host.registrations[0]!.order).toBe(600);
     expect(Object.keys(host.registrations[0]!.slots)).toEqual(["sidebar_content"]);
     // 详情页与 /quota 命令已随消费统计一并移除；仅保留 quota-refresh。
-    expect(host.layers.flatMap((layer) => [...layer.commands || []]).map((command) => ({ name: command.name, slash: command.slashName, namespace: command.namespace, category: command.category }))).toEqual([
-      { name: "quota.refresh", slash: "quota-refresh", namespace: "palette", category: "Quota" },
+    expect(host.commands.map((command) => ({ value: command.value, slash: command.slash?.name, category: command.category }))).toEqual([
+      { value: "quota.refresh", slash: "quota-refresh", category: "Quota" },
     ]);
     const Slot = host.Slot!;
     await render(() => <Slot name="sidebar_content" mode="append" session_id="session-a" />, screen.renderer);

@@ -2,11 +2,14 @@
 
 ## Locked environment
 
-Targets Linux, OpenCode **1.x (tested on 1.18.30 / 1.18.31)**, default local TUI only. Implemented against the [v1.18.30 source (version gate relaxed to 1.*.*, verified on 1.18.31)](https://github.com/anomalyco/opencode/tree/v1.18.30). No promises for other versions, distribution channels, attach mode or explicit network transports. Runtime verification status must be read from the acceptance artifacts; it cannot be inferred from this document.
+Targets Linux, OpenCode **2.x (tested on 2.0.11)**, default local TUI only. Version gate is `2.*.*`; provider response shape is guarded at runtime and degrades to explicit errors on contract drift. No promises for other versions, distribution channels, remote-server mode or explicit network transports. Runtime verification status must be read from the acceptance artifacts; it cannot be inferred from this document.
 
 | Dependency | Exact dev version |
 |---|---|
-| `@opencode-ai/plugin` / `@opencode-ai/sdk` | 1.18.30 |
+| `@opencode-ai/plugin` (V2 TUI API types) | 1.4.8 |
+| `@opencode-ai/sdk` (fake-host client only) | 1.18.30 |
+
+Known limitation (2.x): openai channel is degraded to an explicit error — V2 stores credentials in the host database and the plugin cannot yet obtain OAuth tokens. The smoke fence harness is still bound to the 1.x host API surface (config keys, /global/health, db schema, tui.json mount) and requires a dedicated rewrite task; unit and UI fences cover the current adaptation.
 | `@opentui/core` / `solid` / `keymap` | 0.4.5 |
 | `solid-js` | 1.9.12 |
 | TypeScript | 5.8.2 |
