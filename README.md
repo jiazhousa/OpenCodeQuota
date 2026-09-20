@@ -2,6 +2,17 @@
 
 A read-only quota sidebar plugin for **Linux / OpenCode 1.x (tested on 1.18.30 / 1.18.31) / the standard local TUI**. Self-contained, no machine-local path dependencies, portable to other Linux machines. Acceptance status is documented in [docs/acceptance.md](docs/acceptance.md); type checks and simulated UI do not prove real provider authentication.
 
+
+## Status: waiting for OpenCode 2.x TUI plugin UI surface
+
+This build (0.0.2) targets OpenCode 2.x with the unified `{id, setup}` plugin protocol.
+As of 2.0.10/2.0.11 beta, the TUI plugin context exposes no UI rendering domains
+(no slots/theme/toast — verified by runtime probing). The sidebar UI cannot mount yet.
+
+- Credential chain (`provider.list` → settings.apiKey) and quota-fetch business layer are verified working against 2.0.11.
+- TUI-internal slots/markdown registration infrastructure is present in the binary but not yet wired to the plugin context — adaptation is expected to be quick once the UI surface opens.
+- Until then, this package stays a protocol-transition build and is not mountable.
+
 ## Features
 
 - The session sidebar automatically shows GLM Coding Plan and GPT Pro20x subscription windows plus the DeepSeek balance, with the subscription tier as a name suffix (`GLM Coding Plan (Max)` / `GPT Pro20x (Pro)`; hidden when the value is unknown).
