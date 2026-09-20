@@ -1,7 +1,6 @@
 {
   "name": "opencode-channel-quota",
   "version": "0.0.2",
-  "private": true,
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
