@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { PROVIDER_IDS } from "../core/contracts.ts";
-import type { Clock, Env, QuotaCache, QuotaCacheKey, QuotaSnapshot, Window } from "../core/contracts.ts";
+import type { Clock, QuotaCache, QuotaCacheKey, QuotaSnapshot, Window } from "../core/contracts.ts";
 import { record } from "./credentials.ts";
 import { validAmount, validCurrency } from "./deepseek.ts";
 
@@ -41,9 +41,9 @@ export function validateSnapshot(value: unknown, key: QuotaCacheKey, now: number
   return { providerId: key.providerId, windows, balances, plan: value.plan as string | null, available: value.available as boolean | null, fetchedAt: value.fetchedAt };
 }
 
-export interface QuotaCacheOptions { env: Env; clock: Clock; home?: string }
-export function createQuotaCache({ env, clock, home = homedir() }: QuotaCacheOptions): QuotaCache {
-  const state = env.XDG_STATE_HOME;
+export interface QuotaCacheOptions { clock: Clock; stateHome?: string; home?: string }
+export function createQuotaCache({ clock, stateHome = process.env.XDG_STATE_HOME, home = homedir() }: QuotaCacheOptions): QuotaCache {
+  const state = stateHome;
   const directory = state === undefined ? join(home, ".local/state/opencode/channel-quota")
     : state && isAbsolute(state) ? join(state, "opencode/channel-quota") : null;
   const validKey = (key: QuotaCacheKey) => PROVIDER_IDS.includes(key.providerId) && /^[a-f0-9]{64}$/.test(key.identityHash);

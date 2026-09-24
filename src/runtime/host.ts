@@ -1,54 +1,94 @@
-import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
-import type { HostPort, LocalCheckResult } from "../core/contracts.ts";
+import type { CredentialBundle, HostPort, LocalCheckResult, ProviderId, ResolvedCredential } from "../core/contracts.ts";
+import { PROVIDER_IDS } from "../core/contracts.ts";
 
-type HostApi = Pick<TuiPluginApi, "client">;
+// V2 server 侧插件 ctx 的最小消费面（OpenCode 2.0.16 实证 + 官方 build/plugins 契约；手写形状，零运行时依赖插件包）。
+export interface V2ServerContext {
+  app: { version?: string };
+  provider: { list(options?: { signal?: AbortSignal }): Promise<unknown> };
+  integration: {
+    connection: {
+      active(integrationID: string): Promise<unknown>;
+      resolve(connection: unknown): Promise<unknown>;
+    };
+  };
+}
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+const bounded = (value: unknown, max: number): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= max && !/[\s\x00-\x1f\x7f]/.test(value);
+const keyValid = (value: unknown): value is string => bounded(value, 16384) && !/^(dummy|opencode-oauth-dummy-key|undefined|null)$/i.test(value);
 
-// 唯一受限的内部 SDK 读取：不复制 config，也不读取认证头或其他配置。
-function baseUrl(api: HostApi): unknown {
-  const sdk: unknown = api.client;
-  if (!object(sdk) || !object(sdk.client) || typeof sdk.client.getConfig !== "function") return undefined;
-  const config: unknown = sdk.client.getConfig();
-  return object(config) ? config.baseUrl : undefined;
+// OAuth access 是 JWT：accountId 缺失时从 claims 恢复（V1 语义保留）。
+function jwtAccount(access: string): string | undefined {
+  try {
+    const parts = access.split(".");
+    if (parts.length !== 3 || !parts[1] || parts[1].length > 12000) return;
+    const claims: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    if (!object(claims)) return;
+    const auth = claims["https://api.openai.com/auth"];
+    const id = object(auth) ? auth.chatgpt_account_id : claims.chatgpt_account_id;
+    return bounded(id, 256) ? id : undefined;
+  } catch { return; }
 }
 
-export function hasExplicitAttach(argv: readonly string[]): boolean {
-  const args = argv.slice(2);
-  const beforeSeparator = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--"));
-  return args[0] === "attach" || beforeSeparator.some((arg) => arg === "--attach" || arg.startsWith("--attach="));
+/** integration resolve 结果 → 规范化凭据（api：{type:"key", key}——2.0.16 实测字面量；oauth：{type:"oauth", access, refresh, expires, metadata}） */
+function normalize(resolved: unknown): ResolvedCredential | null {
+  if (!object(resolved)) return null;
+  const type = resolved.type;
+  if (type === "key" || type === "api") {
+    return keyValid(resolved.key) ? { kind: "api", secret: resolved.key } : null;
+  }
+  if (type === "oauth") {
+    if (!keyValid(resolved.access)) return null;
+    const metadata = object(resolved.metadata) ? resolved.metadata : {};
+    return {
+      kind: "oauth",
+      secret: resolved.access,
+      expires: typeof resolved.expires === "number" && Number.isFinite(resolved.expires) ? resolved.expires : undefined,
+      accountId: bounded(metadata.accountId, 256) ? metadata.accountId : jwtAccount(resolved.access),
+    };
+  }
+  return null;
 }
 
-export function createHostPort(api: HostApi, argv: readonly string[] = process.argv): HostPort {
+const isProviderList = (value: unknown): value is CredentialBundle["list"] =>
+  object(value) && Array.isArray((value as CredentialBundle["list"]).data);
+
+export function createServerHostPort(ctx: V2ServerContext): HostPort {
   let verified = false;
   return {
     async checkLocal(signal): Promise<LocalCheckResult> {
       verified = false;
       if (signal.aborted) return { ok: false, error: { code: "aborted" } };
-      try {
-        if (hasExplicitAttach(argv) || baseUrl(api) !== "http://opencode.internal") {
-          return { ok: false, error: { code: "local_unsupported" } };
-        }
-        const response = await api.client.global.health({ signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
-        if (signal.aborted) return { ok: false, error: { code: "aborted" } };
-        if (!response.data || response.error) return { ok: false, error: { code: "host_unavailable" } };
-        // 放宽为 v1.*.*（用户决策）：自动升级不断供；数据库/凭据/端点各有独立 schema 探测兜底，契约变化时降级为明确错误而非误显示。
-        if (!/^1\.\d+\.\d+$/.test(response.data.version)) return { ok: false, error: { code: "version_unsupported" } };
-        verified = true;
-        return { ok: true };
-      } catch {
-        return { ok: false, error: { code: signal.aborted ? "aborted" : "host_unavailable" } };
-      }
+      const version = ctx.app?.version;
+      // server 侧插件运行在宿主 server 进程内（无远程概念）；版本门守 2.x（用户决策 2026-09-24）。
+      if (typeof version !== "string" || !/^2\.\d+\.\d+/.test(version)) return { ok: false, error: { code: "version_unsupported" } };
+      verified = true;
+      return { ok: true };
     },
-    async readProviders(signal) {
+    async readCredentials(signal): Promise<CredentialBundle> {
+      if (!verified || signal.aborted) throw { code: "host_unavailable" };
+      let list: CredentialBundle["list"];
       try {
-        if (!verified || signal.aborted || baseUrl(api) !== "http://opencode.internal") throw new Error();
-        const response = await api.client.provider.list(undefined, { signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
-        if (signal.aborted || response.error || !response.data) throw new Error();
-        return response.data;
+        const response: unknown = await ctx.provider.list();
+        if (signal.aborted || !isProviderList(response)) throw new Error();
+        list = response;
       } catch {
         // 不将 SDK 异常（可能含 URL、请求头和凭据）跨过边界。
         throw { code: "host_unavailable" };
       }
+      const resolved: Record<ProviderId, ResolvedCredential | null> = { "zhipuai-coding-plan": null, openai: null, deepseek: null };
+      await Promise.all(PROVIDER_IDS.map(async (id) => {
+        try {
+          const conn = await ctx.integration.connection.active(id);
+          if (!conn) return;
+          const raw = await ctx.integration.connection.resolve(conn);
+          resolved[id] = normalize(raw);
+        } catch {
+          resolved[id] = null; // 单渠道解析失败不阻断其余渠道。
+        }
+      }));
+      if (signal.aborted) throw { code: "aborted" };
+      return { list, resolved };
     },
   };
 }

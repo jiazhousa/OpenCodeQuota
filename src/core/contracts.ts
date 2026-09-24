@@ -108,21 +108,37 @@ export interface Clock {
   clearTimeout(handle: TimeoutHandle): void;
 }
 
-// 使用锁版 SDK 的成功响应 data，不能误用同名的请求参数 ProviderListData。
+// V2 provider.list 返回形态（OpenCode 2.0.16 运行时实证 2026-09-24；不引官方类型包——零运行时依赖）。
 // 该原始数据仅在宿主适配与凭据服务之间流动，不能进入 ViewState。
-export type HostProviders = ProviderListResponses[200];
+// V2 语义：settings 回显 config 声明的内联值（含 apiKey）；db 凭据（OAuth）不经此接口暴露。
+export interface V2ProviderEntry {
+  id: string;
+  integrationID?: string;
+  name?: string;
+  activation?: string;
+  package?: string;
+  settings?: Record<string, unknown>;
+  headers?: Record<string, unknown>;
+}
+export type HostProviders = { location?: { directory?: string }; data: V2ProviderEntry[] };
+
+/** integration.connection.resolve 的规范化结果（server host 收集；secret 仅在内存链流动） */
+export interface ResolvedCredential {
+  kind: "api" | "oauth";
+  secret: string;
+  expires?: number;
+  accountId?: string;
+}
+/** 凭据束：provider.list（端点白名单/激活态）+ integration resolve（db 凭据，优先） */
+export type CredentialBundle = {
+  list: HostProviders;
+  resolved: Record<ProviderId, ResolvedCredential | null>;
+};
 
 export interface HostPort {
   checkLocal(signal: AbortSignal): Promise<LocalCheckResult>;
-  readProviders(signal: AbortSignal): Promise<HostProviders>;
+  readCredentials(signal: AbortSignal): Promise<CredentialBundle>;
 }
-
-export type Env = Readonly<Record<string, string | undefined>>;
-
-// 只读认证文件适配：返回最多 1 MiB 文本，文件不存在为 null。
-// 显式 OPENCODE_AUTH_CONTENT 的优先级与解析由凭据模块处理，不回退文件。
-// 原文只在凭据模块内部短暂使用，失败不得将原文放入异常或状态。
-export type ReadAuth = (path: string, signal: AbortSignal) => Promise<string | null>;
 
 // 仅取 fetch 的调用签名，不要求 mock 实现 Bun 的附加静态方法。
 export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -151,8 +167,6 @@ export interface ProviderService {
 export interface ProviderServiceOptions {
   host: HostPort;
   clock: Clock;
-  env: Env;
-  readAuth: ReadAuth;
   fetch: Fetch;
   cache: QuotaCache;
   signal: AbortSignal;

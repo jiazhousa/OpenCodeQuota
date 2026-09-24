@@ -3,10 +3,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { render } from "@opentui/solid";
 import { createTestRenderer } from "@opentui/core/testing";
-import type { TuiPluginMeta } from "@opencode-ai/plugin/tui";
 import { createQuotaPlugin } from "../../src/tui.tsx";
 import { Sidebar } from "../../src/ui/Sidebar.tsx";
-import { createFakeHost, flushPromises, themeFixture, viewFixture } from "../fixtures/fake-host.ts";
+import { createFakeV2Context, flushPromises, themeFixture, viewFixture } from "../fixtures/fake-host.ts";
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
@@ -18,27 +17,22 @@ async function renderer(width = 42, height = 80) {
 }
 
 describe("真实 OpenTUI 组件与 slot 挂载", () => {
-  test("生产入口注册：id、order600、sidebar_content 与唯一刷新命令", async () => {
+  test("生产入口注册：id、sidebar.content 追加位与 cleanup 幂等", async () => {
     const screen = await renderer(42, 30);
-    const host = createFakeHost({ renderer: screen.renderer });
-    cleanup.push(host.dispose);
+    const host = createFakeV2Context();
     const plugin = createQuotaPlugin();
     expect(plugin.id).toBe("opencode-channel-quota");
-    expect(plugin.server).toBeUndefined();
-    await plugin.tui(host.api, undefined, {} as TuiPluginMeta);
-    expect(host.registrations).toHaveLength(1);
-    // 原生 Context/MCP/LSP/Todo/Files 为 100–500；600 保证原生区块在前。
-    expect(host.registrations[0]!.order).toBe(600);
-    expect(Object.keys(host.registrations[0]!.slots)).toEqual(["sidebar_content"]);
-    // 详情页与 /quota 命令已随消费统计一并移除；仅保留 quota-refresh。
-    expect(host.layers.flatMap((layer) => [...layer.commands || []]).map((command) => ({ name: command.name, slash: command.slashName, namespace: command.namespace, category: command.category }))).toEqual([
-      { name: "quota.refresh", slash: "quota-refresh", namespace: "palette", category: "Quota" },
-    ]);
-    const Slot = host.Slot!;
-    await render(() => <Slot name="sidebar_content" mode="append" session_id="session-a" />, screen.renderer);
+    const dispose = await plugin.setup(host.ctx);
+    // V1 order=600（原生块在前）的 V2 等价：append 到 sidebar.content 尾部；第一版无命令注册（自动刷新链完整，手动 refresh 为 backlog）。
+    expect(host.claims).toHaveLength(1);
+    expect(host.claims[0]!.append).toBe("sidebar.content");
+    expect(typeof host.claims[0]!.render).toBe("function");
+    await render(() => host.claims[0]!.render() as never, screen.renderer);
     await flushPromises(); await screen.renderOnce();
     expect(screen.captureCharFrame()).toContain("▼ Quota");
-    expect(host.registry!.getPluginErrors()).toHaveLength(0);
+    // cleanup（setup 返回值）：重复调用不得抛出。
+    dispose();
+    expect(() => dispose()).not.toThrow();
   });
 
   test("侧栏渲染英文水平条、渠道名与余额，点击折叠/恢复，错误状态英文提示", async () => {

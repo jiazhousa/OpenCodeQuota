@@ -14,6 +14,16 @@ Targets Linux, OpenCode **1.x (tested on 1.18.30 / 1.18.31)**, default local TUI
 
 Node 24.19.0 / npm 11.17.0 were the prep environment. Distribution is `src/tui.tsx` via file URL, compiled by the host; the source TSX cannot be installed directly as an npm package. `build` emits no dist. Third-party declarations conflict on EventEmitter/TextEncoder; `skipLibCheck: true` does not weaken strict checks over src/tests/scripts, nor prove Solid identity or native dependency compatibility.
 
+## OpenCode 2.x status (verified feasible, port not yet shipped)
+
+OpenCode 2.0.16 shipped a complete CLI-plugin channel; feasibility was verified by probe on 2026-09-24 (full evidence: OpenCodePipe repo `.specpipe/plans/ocp-plugin-dual-compat/experiment-record.md`, 2026-09-25 section):
+
+- TUI plugins load only as a package directory `plugins/<name>/` containing `package.json` exporting `"./tui"` plus a `tui.tsx` entry; single-file mounts and config-declared (`cli.json`/`opencode.json` `plugins`) entries are not loaded by the TUI. `index.ts` beside `tui.tsx` is consumed by the server side.
+- The TUI plugin context exposes `ui.slot({ append: "sidebar.content", render })`. `render` must return an OpenTUI component (`<text>`/`<box>`); a bare string crashes the TUI with an Orphan text error.
+- Known layout paths: `sidebar.content` (sidebar position), `sidebar.footer`, `session.panel`, `session.composer.top`, `home.footer`(`.status`), `prompt.footer`(`.file`/`.status`). A bare target like `"sidebar"` is claimed silently but never rendered.
+
+Until the port lands this repository targets 1.x only. The 2.x port backlog: package-layout mount, host probe adaptation (version gate widened to 2.x, ctx shapes, storage paths), slot-based sidebar rendering reusing the existing Solid components.
+
 ## Host & paths
 
 - The only restricted SDK read is `client.getConfig().baseUrl`, which must be exactly `http://opencode.internal`, followed by a health-version check. localhost is not proof of local mode; a failed check prevents any credential reads or remote requests.
