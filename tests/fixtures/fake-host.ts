@@ -85,7 +85,7 @@ export function createFakeV2Context(options: FakeV2Options = {}) {
       rpc: { call: async (request: { rpcID: string; method: string; input?: unknown }) => {
         calls.push({ method: request.rpcID === QUOTA_RPC_ID && request.method === "view" ? "server.info" : "provider.list" });
         if (options.sdkFailure) throw new Error(SENTINEL);
-        return viewFixture();
+        return { output: viewFixture() };  // 2.0.16 实测：rpc.call 返回 {output} 包装
       } },
       event: { subscribe: async function* (opts?: { signal?: AbortSignal }) {
         for (const event of events) { if (opts?.signal?.aborted) return; yield event; }

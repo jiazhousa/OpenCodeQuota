@@ -23,6 +23,11 @@ export const QUOTA_RPC_DEF = {
       input: { type: "object", properties: {}, additionalProperties: false },
       output: VIEW_SCHEMA,
     },
+    // 手动刷新（CLI /quota-refresh）：等待 controller.refresh 完成后返回最新快照（output 同 view）。
+    refresh: {
+      input: { type: "object", properties: {}, additionalProperties: false },
+      output: VIEW_SCHEMA,
+    },
   },
   events: {
     updated: { schema: VIEW_SCHEMA },

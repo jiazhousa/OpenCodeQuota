@@ -78,9 +78,10 @@ export function createQuotaPlugin(_dependencies: QuotaPluginDependencies = {}): 
     async setup(ctx) {
       const lifetime = new AbortController();
       const [state, setState] = createSignal<ViewState>(initialView());
+      // rpc.call 返回 {output: <结果>} 包装（2.0.16 实测）；事件流 data 为快照本体——两路分别剥壳。
       const pull = () =>
         ctx.client.rpc.call({ rpcID: QUOTA_RPC_ID, method: "view", input: {} })
-          .then((value) => { const view = sanitizedView(value); if (view) setState(() => view); })
+          .then((value) => { const payload = typeof value === "object" && value !== null && "output" in value ? (value as { output: unknown }).output : value; const view = sanitizedView(payload); if (view) setState(() => view); })
           .catch(() => { /* server 侧插件未就绪时保持现有视图 */ });
       void pull();
       // 事件流：rpc.opencode-quota.updated（官方信封 {type, data, location}；data 即快照）。
