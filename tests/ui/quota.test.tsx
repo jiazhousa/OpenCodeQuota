@@ -23,13 +23,22 @@ describe("真实 OpenTUI 组件与 slot 挂载", () => {
     const plugin = createQuotaPlugin();
     expect(plugin.id).toBe("opencode-channel-quota");
     const dispose = await plugin.setup(host.ctx);
-    // V1 order=600（原生块在前）的 V2 等价：append 到 sidebar.content 尾部；第一版无命令注册（自动刷新链完整，手动 refresh 为 backlog）。
-    expect(host.claims).toHaveLength(1);
+    // 双 slot：sidebar.content（侧栏渲染）+ app（keymap 命令注册——sidebar 树无 KeymapProvider，官方 pattern）。
+    expect(host.claims).toHaveLength(2);
     expect(host.claims[0]!.append).toBe("sidebar.content");
+    expect(host.claims[1]!.append).toBe("app");
     expect(typeof host.claims[0]!.render).toBe("function");
     await render(() => host.claims[0]!.render() as never, screen.renderer);
     await flushPromises(); await screen.renderOnce();
     expect(screen.captureCharFrame()).toContain("▼ Quota");
+    // app slot render 执行 keymap.layer 注册 /quota-refresh 命令（palette + slash）。
+    host.claims[1]!.render();
+    expect(host.layers).toHaveLength(1);
+    const layer = host.layers[0] as { mode: string; commands: Array<Record<string, unknown>> };
+    expect(layer.mode).toBe("global");
+    expect(layer.commands[0]!.id).toBe("quota.refresh");
+    expect(layer.commands[0]!.palette).toBe(true);
+    expect(layer.commands[0]!.slash).toEqual({ name: "quota-refresh" });
     // cleanup（setup 返回值）：重复调用不得抛出。
     dispose();
     expect(() => dispose()).not.toThrow();

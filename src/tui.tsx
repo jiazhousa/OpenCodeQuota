@@ -13,7 +13,24 @@ export interface QuotaTuiContext {
     event: { subscribe(options?: { signal?: AbortSignal }): AsyncIterable<{ type?: string; data?: unknown }> };
   };
   theme: TuiThemeCurrent;
-  ui: { slot(claim: { append?: string; render: () => unknown }): unknown };
+  ui: {
+    slot(claim: { append?: string; render: () => unknown }): unknown;
+    toast: { show(input: { title?: string; message: string; variant?: "info" | "success" | "error"; duration?: number }): unknown };
+  };
+  // keymap（2.0.16 官方 CLI 插件 API，实证 2026-09-25）：layer(factory) 在 app slot render 内调用；
+  // sidebar.content slot 树无 KeymapProvider 上下文（layer 静默不注册）——命令注册必须走 app slot。
+  keymap: {
+    layer(factory: () => {
+      mode?: string;
+      commands: Array<{
+        id: string; title: string; group?: string; bind?: string;
+        palette?: boolean; slash?: { name: string; aliases?: string[]; arguments?: boolean };
+        run: (input?: string) => unknown;
+      }>;
+    }): unknown;
+    commands(): Array<{ id: string; [key: string]: unknown }>;
+    dispatch(id: string, input?: string): unknown;
+  };
 }
 
 export interface QuotaPluginDependencies { fetch?: Fetch }
@@ -81,6 +98,30 @@ export function createQuotaPlugin(_dependencies: QuotaPluginDependencies = {}): 
       ctx.ui.slot({
         append: "sidebar.content",
         render: () => <Sidebar state={state} theme={adaptTheme(ctx.theme)} />,
+      });
+      // /quota-refresh 命令（V1 同名 slash 恢复）：palette + slash 双入口（官方 pattern：
+      // keymap.layer 必须在 app slot render 内——app 在宿主主树（有 KeymapProvider），sidebar 树不在）。
+      ctx.ui.slot({
+        append: "app",
+        render: () => {
+          ctx.keymap.layer(() => ({
+            mode: "global",
+            commands: [{
+              id: "quota.refresh", title: "Refresh Quota", group: "Quota",
+              palette: true, slash: { name: "quota-refresh" },
+              run: async () => {
+                try {
+                  await ctx.client.rpc.call({ rpcID: QUOTA_RPC_ID, method: "refresh", input: {} });
+                  void pull();
+                  ctx.ui.toast.show({ title: "Quota", message: "Quota refreshed", variant: "success" });
+                } catch {
+                  ctx.ui.toast.show({ title: "Quota", message: "Refresh failed", variant: "error" });
+                }
+              },
+            }],
+          }));
+          return null;
+        },
       });
       return () => {
         lifetime.abort();

@@ -29,6 +29,8 @@ export function createQuotaServerPlugin(dependencies: QuotaServerDependencies = 
       const lifetime = new AbortController();
       const registration = await ctx.rpc.register(QUOTA_RPC_DEF, {
         view: async () => viewSnapshot(controller.state()),
+        // 手动刷新（CLI 侧 /quota-refresh 命令）：等待 controller.refresh 完成后回传最新快照。
+        refresh: async () => { await controller.refresh(); return viewSnapshot(controller.state()); },
       });
       const controller = createQuotaController({
         host: createServerHostPort(ctx),

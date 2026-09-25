@@ -6,7 +6,7 @@
 - `src/providers/`: host-effective credential resolution (V2: `integration.connection.active/resolve` first, config-inline `/api/provider` settings echo second), official GETs, parsers, identity-isolated cache, retry and refresh scheduling. Raw auth/Provider/HTTP exceptions must never reach the UI.
 - `src/runtime/`: host adapter (`host.ts` — V2 server ctx provider/integration domains), and the controller lifecycle (provider scheduling, 30s `now` tick, cold-start retry 15s×4 until a channel is ready, manual refresh, dispose).
 - `src/server.ts`: **server-side plugin entry** (loaded from the mount package root `index.ts`) — credential collection + controller + RPC `view`/`updated`; test injection point is `createQuotaServerPlugin({ fetch })`.
-- `src/tui.tsx`: **CLI-side plugin entry** (loaded via package `exports["./tui"]`) — RPC consumption, 60s polling fallback, V2 nested-theme adaptation (bar/labels `#FF8C00`); test injection point is `createQuotaPlugin()`.
+- `src/tui.tsx`: **CLI-side plugin entry** (loaded via package `exports["./tui"]`) — RPC consumption, 60s polling fallback, V2 nested-theme adaptation (bar/labels `#FF8C00`), and the `/quota-refresh` command (keymap layer registered inside an `app`-slot render — sidebar slot has no KeymapProvider); test injection point is `createQuotaPlugin()`.
 - `src/rpc-def.ts`: the RPC contract constants shared by both sides.
 - `src/ui/`: production sidebar components (consume safe snapshots only, host Solid/OpenTUI identity; renders connected channels only — V1 behavior kept).
 - `tests/`: synthetic fixtures, unit and rendering tests; `tests/smoke/server-entry.ts` replaces the production **server-side** fetch and must never be installed; `tests/smoke/entry.tsx` is a pure forward of the production renderer.

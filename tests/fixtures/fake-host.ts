@@ -78,6 +78,8 @@ export function createFakeV2Context(options: FakeV2Options = {}) {
   const claims: SlotClaim[] = [];
   const events: Array<{ type?: string; data?: unknown }> = [];
   const calls: Array<{ method: string }> = [];
+  const toasts: Array<{ title?: string; message: string; variant?: string }> = [];
+  const layers: unknown[] = [];
   const ctx: QuotaTuiContext = {
     client: {
       rpc: { call: async (request: { rpcID: string; method: string; input?: unknown }) => {
@@ -91,9 +93,17 @@ export function createFakeV2Context(options: FakeV2Options = {}) {
       } },
     },
     theme: options.theme ?? themeFixture(),
-    ui: { slot: (claim: SlotClaim) => { claims.push(claim); } },
+    ui: {
+      slot: (claim: SlotClaim) => { claims.push(claim); },
+      toast: { show: (input: { title?: string; message: string; variant?: string }) => { toasts.push(input); } },
+    },
+    keymap: {
+      layer: (factory: () => unknown) => { layers.push(factory()); },
+      commands: () => [],
+      dispatch: () => undefined,
+    },
   };
-  return { ctx, claims, calls, events };
+  return { ctx, claims, calls, events, toasts, layers };
 }
 
 // 供 controller/unit 测试继续复用的简单状态信号工厂。
