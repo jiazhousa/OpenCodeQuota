@@ -18,6 +18,7 @@ const checks = new Map<string, string>([
   ["真实 PTY 自动侧栏", "NOT_RUN"],
   ["切换会话与隐藏侧栏", "NOT_RUN（V2 keybind 合成 backlog）"],
   ["深浅主题与窄屏恢复", "NOT_RUN（V2 keybind 合成 backlog）"],
+  ["GPT OAuth 渠道正向用例", "DISABLED（合成 OAuth 注入法未验证——V2 connect oauth 形态待查；真实链路由生产环境每日覆盖。用户决策 2026-09-25：V2 快迭代版本，容忍 smoke 覆盖缺口）"],
   ["正常退出", "NOT_RUN"],
   ["安全日志/缓存/请求审计", "NOT_RUN"],
   ["清理", "NOT_RUN"],
