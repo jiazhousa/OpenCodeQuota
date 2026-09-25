@@ -14,15 +14,21 @@ Targets Linux, OpenCode **1.x (tested on 1.18.30 / 1.18.31)**, default local TUI
 
 Node 24.19.0 / npm 11.17.0 were the prep environment. Distribution is `src/tui.tsx` via file URL, compiled by the host; the source TSX cannot be installed directly as an npm package. `build` emits no dist. Third-party declarations conflict on EventEmitter/TextEncoder; `skipLibCheck: true` does not weaken strict checks over src/tests/scripts, nor prove Solid identity or native dependency compatibility.
 
-## OpenCode 2.x status (verified feasible, port not yet shipped)
+## OpenCode 2.x status (dual-sided port shipped 2026-09-25, commit bb938a5 + smoke closure)
 
-OpenCode 2.0.16 shipped a complete CLI-plugin channel; feasibility was verified by probe on 2026-09-24 (full evidence: OpenCodePipe repo `.specpipe/plans/ocp-plugin-dual-compat/experiment-record.md`, 2026-09-25 section):
+OpenCode 2.0.16 verified feasible on 2026-09-24, port shipped on 2026-09-25 (full evidence: OpenCodePipe repo `.specpipe/plans/ocp-plugin-dual-compat/experiment-record.md`, 2026-09-25 sections):
 
-- TUI plugins load only as a package directory `plugins/<name>/` containing `package.json` exporting `"./tui"` plus a `tui.tsx` entry; single-file mounts and config-declared (`cli.json`/`opencode.json` `plugins`) entries are not loaded by the TUI. `index.ts` beside `tui.tsx` is consumed by the server side.
-- The TUI plugin context exposes `ui.slot({ append: "sidebar.content", render })`. `render` must return an OpenTUI component (`<text>`/`<box>`); a bare string crashes the TUI with an Orphan text error.
-- Known layout paths: `sidebar.content` (sidebar position), `sidebar.footer`, `session.panel`, `session.composer.top`, `home.footer`(`.status`), `prompt.footer`(`.file`/`.status`). A bare target like `"sidebar"` is claimed silently but never rendered.
+**Architecture.** Official dual-entry mount: a package directory `plugins/<name>/` with `package.json` exporting `"./tui"`. The server process loads the package-root `index.ts` (`src/server.ts`: credential collection via `integration.connection.active/resolve` + controller data layer + RPC `view`/`updated` broadcast); the CLI process loads `./tui` (`src/tui.tsx`: RPC consumption via `client.rpc.call({rpcID, method, input})`, event envelope `{type:"rpc.<id>.<event>", data, location}` via `client.event.subscribe`, plus a 60s polling fallback). Same plugin id in two directories is rejected (Duplicate plugin ID); CLI-side and server-side `ctx.storage` are not shared; CLI-side plugins hot-reload on file change (verified 2026-09-25).
 
-Until the port lands this repository targets 1.x only. The 2.x port backlog: package-layout mount, host probe adaptation (version gate widened to 2.x, ctx shapes, storage paths), slot-based sidebar rendering reusing the existing Solid components.
+**Credentials (supersedes the earlier "not exposed" misjudgment).** The V2 server-plugin context exposes host credentials: api keys resolve as `{type:"key", key}` (literal `"key"`, not `"api"`), OAuth as `{type:"oauth", access, refresh, expires, metadata:{accountID}}`. All three channels readable, including GPT OAuth. Config inline keys are a second source: they are echoed by `/api/provider` in `settings` and are not overridden by `connection.active`.
+
+**Provider catalog & activation (2026-09-25 findings).** The catalog is fetched asynchronously from `https://models.opencode.ai` (the V1 `models.dev` URL and the `OPENCODE_MODELS_PATH` injection are both dead in V2), cached in the host kv store under `models-dev:catalog`; a cold isolated environment needs ~12s before the catalog registers. `/api/provider` returns only *activated* providers, never the full catalog. Activation via config requires the singular `provider` key with `options.apiKey` — the plural `providers` + `settings` form does **not** activate. Plugin loading itself is also async (an empty `/api/plugin` at t+8s is normal; plan for 10–20s).
+
+**Theme.** V2 `ctx.theme` is nested tokens; the V1 flat keys are adapted in `src/tui.tsx` (`text.base`/`text.muted`/`text.feedback.{warning,error}.base`). `text.action.primary.base` is near-white (238,238,238) in the shipped dark theme, so the bar/labels use the Oracle agent orange `#FF8C00` (user decision 2026-09-25; agent frontmatter `color`, verified identical).
+
+**Smoke/fence closure (2026-09-25).** The V2 smoke uses the same dual-entry shell: package-root `index.ts` forwards to `tests/smoke/server-entry.ts` (mock fetch lives on the **server** side since the port), `./tui` forwards to `tests/smoke/entry.tsx` (production renderer, zero mocks). Cold-start hygiene: the controller retries provider refresh (15s × 4) until a channel is ready; the TUI assertion window is 60s (home) / 90s (sidebar). Process hygiene: a V2 TUI spawns a background service bound to port **49374**; if that port is occupied by a leftover service the TUI hangs at "Starting background server…" forever — the smoke finally-block now reaps every opencode process whose cwd is inside the isolated root (multi-round, respawn-safe). Fence is four-step green with smoke at ~19s. Known backlog: GPT OAuth synthetic injection for smoke (V1 injected a mock OAuth; the V2 `ctx.integration.connect` oauth form is unverified), manual refresh command (needs keymap inside render), session-switch/theme/narrow-screen steps (V2 keybind synthesis).
+
+Until the port lands this repository targets 1.x only → **superseded: the repository now targets 2.x only** (1.x host paths remain in git history).
 
 ## Host & paths
 

@@ -196,23 +196,33 @@ try {
   });
   let api: Awaited<ReturnType<typeof startServer>>;
   await step("V2 隔离环境合成与挂载", async () => {
-    // V2 凭据合成：providers.<id>.settings 内联（2.0.16 实证：settings 回显 config 声明）。
+    // V2 凭据合成（官方文档正解，2.0.16 实证）：单数 provider 键 + options.apiKey——
+    // 复数 providers + settings 形态不激活（/api/provider 不回显）；回显出现在返回体 settings 键。
     await writeFile(join(root, "config/opencode/opencode.json"), JSON.stringify({
       $schema: "https://opencode.ai/config.json",
-      providers: {
-        "zhipuai-coding-plan": { settings: { apiKey: sentinels[0], baseURL: "https://open.bigmodel.cn/api/coding/paas/v4" } },
-        deepseek: { settings: { apiKey: sentinels[1], baseURL: "https://api.deepseek.com" } },
+      provider: {
+        "zhipuai-coding-plan": { options: { apiKey: sentinels[0], baseURL: "https://open.bigmodel.cn/api/coding/paas/v4" } },
+        deepseek: { options: { apiKey: sentinels[1], baseURL: "https://api.deepseek.com" } },
       },
     }), { mode: 0o600 });
     // V2 挂载：XDG 隔离的 plugins 包目录（完整包形态——单文件/配置式 TUI 侧均不加载，实证见 docs/compatibility.md）。
-    const pluginDir = join(root, "config/opencode/plugins/opencode-quota");
+    // 双侧入口与生产挂载壳同构：包根 index.ts（server 侧，注入 mock）+ exports["./tui"]（CLI 侧，纯转发生产渲染）。
+    const pluginDir = join(root, "config/opencode/plugins/opencode-channel-quota");
     await mkdir(pluginDir, { mode: 0o700, recursive: true });
     await writeFile(join(pluginDir, "package.json"), JSON.stringify({ name: "opencode-channel-quota", exports: { "./tui": "./tui.tsx" } }), { mode: 0o600 });
+    await writeFile(join(pluginDir, "index.ts"), `export { default } from ${JSON.stringify(pathToFileURL(join(repository, "tests/smoke/server-entry.ts")).href)};\n`, { mode: 0o600 });
     await writeFile(join(pluginDir, "tui.tsx"), `export { default } from ${JSON.stringify(pathToFileURL(join(repository, "tests/smoke/entry.tsx")).href)};\n`, { mode: 0o600 });
   });
   await step("serve API 与内联凭据回显", async () => {
     api = await startServer(env);
-    const providers = await api("/api/provider");
+    // 目录时序（2.0.16 实证）：serve 启动后异步从 models.opencode.ai 拉目录（~6.8MB）+ 注册，
+    // 空隔离库冷启动约 12 秒才出现激活 provider——必须轮询等待而非单次断言。
+    let providers: unknown = { data: [] };
+    await until(async () => {
+      providers = await api("/api/provider");
+      return record(providers) && Array.isArray(providers.data)
+        && (providers.data as Array<Record<string, unknown>>).some((p) => p.id === "zhipuai-coding-plan");
+    }, "隔离环境 provider 目录/激活未在 30 秒内就绪（目录拉取依赖 models.opencode.ai 可达）", 30000);
     requireThat(record(providers) && Array.isArray(providers.data), "provider.list 数据结构不匹配（V2 形态 {location,data}）");
     for (const [id, sentinel, baseURL] of [["zhipuai-coding-plan", sentinels[0], "https://open.bigmodel.cn/api/coding/paas/v4"], ["deepseek", sentinels[1], "https://api.deepseek.com"]] as const) {
       const found = (providers.data as Array<Record<string, unknown>>).find((provider) => provider.id === id);
@@ -220,7 +230,7 @@ try {
       const settings = record(found.settings) ? found.settings : {};
       requireThat(settings.apiKey === sentinel && settings.baseURL === baseURL, `${id} settings 内联回显不匹配`);
     }
-    await artifact("provider-contract.txt", "PASS：GLM/DeepSeek 内联 apiKey 经 /api/provider 回显一致（V2 语义：settings 回显 config 声明）。原始返回未保存。\n");
+    await artifact("provider-contract.txt", "PASS：GLM/DeepSeek options.apiKey 经 /api/provider settings 回显一致（V2 语义）。原始返回未保存。\n");
   });
   await step("真实 PTY 自动侧栏", async () => {
     socket = join(root, "tmux.sock");
@@ -237,13 +247,25 @@ process.exit(exitCode);
       "/usr/bin/env", "-i", ...Object.entries(env).map(([key, value]) => `${key}=${value}`), process.execPath, runner, serverBinary);
     await tm("set-option", "-w", "-t", "quota:0", "remain-on-exit", "on");
     // home 界面就绪后进入会话（sidebar.content 在 session 视图渲染——2.0.16 实证）。
-    await visible(["Ask anything"], "TUI home 未就绪", 30000);
+    // 冷启动时序余量（2.0.16 实证）：TUI spawn 后台 server + 插件加载（10-20s，/api/plugin t+8s 仍空）
+    // + provider 目录拉取（~12s）+ quota 启动刷新失败后的 15s 自愈重试——90s 窗口覆盖全链。
+    await visible(["Ask anything"], "TUI home 未就绪", 60000);
     await sleep(2500);
     await keys("-l", "hi"); await keys("Enter");
-    await visible(["GLM Coding Plan (Max)", "GPT Pro20x", "DeepSeek", "5h", "23%", "reset in", "Balance CNY 125.750000", "Unavailable"], "真实侧栏与凭据组合未就绪", 30000);
+    try {
+      // V1 曾以合成 OAuth 注入 GPT 渠道（12%/34% 断言）；V2 的 OAuth 凭据注入法未验证（backlog），
+      // 现断言语义：GLM/DeepSeek 内联 key 全链（凭据→请求→渲染）+ GPT 无凭据负例（不渲染、零请求）。
+      await visible(["GLM Coding Plan (Max)", "DeepSeek", "5h", "23%", "reset in", "Balance CNY 125.750000"], "真实侧栏与凭据组合未就绪", 90000);
+    } catch (error) {
+      await capture("00-failure-sidebar").catch(() => undefined);  // 失败现场快照：诊断侧栏实际渲染状态
+      throw error;
+    }
     await capture("01-sidebar-160x80");
     const sidebar = await screen();
-    const quotaRow = sidebar.split("\n").findIndex((line) => /^Quota [▾▸]/.test(line.trim()));
+    // GPT 无凭据负例：connected 过滤下 GPT 渠道块不渲染（V1 行为保留）；用渠道全名避免误伤宿主 Getting started 文案。
+    requireThat(!contains(sidebar, "GPT Pro20x"), "无凭据的 GPT 渠道不应渲染侧栏块");
+    // V2 布局：正文与侧栏同行（capture 行 trim 后形如 "Hi! … ▼ Quota"），Quota 用行尾匹配；顺序断言保留（原生在前）。
+    const quotaRow = sidebar.split("\n").findIndex((line) => /[▼▲▾▸] Quota$/.test(line.trim()));
     const contextRow = sidebar.split("\n").findIndex((line) => line.includes("Context"));
     requireThat(quotaRow >= 0 && contextRow >= 0, "侧栏缺少原生 Context 或 Quota 区块");
     // V1 order=600 的 V2 等价：append 保证原生区块在前。
@@ -253,8 +275,11 @@ process.exit(exitCode);
       requireThat(!contains(sidebar, redundant), `侧栏出现冗余正常状态、更新时间或命令提示：${redundant}`);
     }
     // 启动轮恰好两渠道各一次 mock GET（GLM+DeepSeek 有内联 key；OpenAI 无凭据零请求）。
+    // 自愈重试可能使某渠道多发（部分成功场景），按渠道计数而非总数。
     const calls = await requests();
-    requireThat(calls.length === 2 && calls.every((call) => call.method === "GET" && ["glm", "deepseek"].includes(call.kind)), "启动不是恰好两个 mock GET（glm+deepseek）");
+    const glm = calls.filter((call) => call.kind === "glm").length;
+    const deepseek = calls.filter((call) => call.kind === "deepseek").length;
+    requireThat(glm >= 1 && deepseek >= 1 && calls.every((call) => call.method === "GET" && ["glm", "deepseek"].includes(call.kind)), "启动未覆盖 glm+deepseek 的 mock GET（或出现异常请求）");
   });
   await step("正常退出", async () => {
     await sleep(500);
@@ -292,6 +317,24 @@ process.exit(exitCode);
       requireThat(result.code === 0, "本次 tmux 清理失败");
     }
   } catch { /* 清理失败不掩盖主结果 */ }
+  // 孤儿回收（2.0.16 实证）：TUI 死后其 spawn 的后台 service/serve 不随 tmux 退出，
+  // 残留者会占住默认端口 49374 使下次运行卡死——按 cwd 在隔离 root 下识别并清理（多轮防 respawn 竞态）。
+  try {
+    if (root) {
+      for (let round = 0; round < 5; round++) {
+        let killed = 0;
+        for (const entry of await readdir("/proc")) {
+          if (!/^\d+$/.test(entry)) continue;
+          let cwd = "";
+          try { cwd = await realpath(join("/proc", entry, "cwd")); } catch { continue; }
+          if (!cwd.startsWith(root + "/") && cwd !== root) continue;
+          try { process.kill(Number(entry), "SIGKILL"); killed += 1; } catch { /* 已退出或权限不足 */ }
+        }
+        if (killed === 0) break;
+        await sleep(300);
+      }
+    }
+  } catch { /* 回收失败不掩盖主结果 */ }
   try {
     if (server && server.exitCode === null) { server.kill("SIGKILL"); await server.exited; }
     if (root) {

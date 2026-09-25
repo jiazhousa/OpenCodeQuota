@@ -46,6 +46,21 @@ export function createQuotaController(options: ControllerOptions) {
       try { await providers?.refresh(reason); }
       catch { hostError({ code: "host_unavailable" }); }
     };
+    // 冷启动自愈（V2 实证 2026-09-25）：隔离/首启环境 provider 目录异步就绪需 ~12s，
+    // 启动刷新可能跑在目录之前（凭据集不齐 → 全渠道 disconnected 且零请求）；
+    // 无任何 ready 渠道时间隔重试（凭据就绪后 refresh 自然发出请求，幂等：有 ready 即停）。
+    let retryTimer: ReturnType<typeof clock.setTimeout> | undefined;
+    let retryCount = 0;
+    const scheduleStartupRetry = () => {
+      if (disposed || retryCount >= 4) return;
+      if (state().channels.some((channel) => channel.phase === "ready")) return;
+      retryCount += 1;
+      retryTimer = clock.setTimeout(() => {
+        retryTimer = undefined;
+        if (disposed) return;
+        void runProviders("manual").then(scheduleStartupRetry);
+      }, 15000);
+    };
     // tick 仅推进 now（重置倒计时）并把超龄 ready 渠道标记为 stale，不联网。
     const scheduleTick = () => {
       if (disposed) return;
@@ -73,6 +88,7 @@ export function createQuotaController(options: ControllerOptions) {
         update({ localStatus: { phase: "ready" } });
         scheduleTick();
         await runProviders("startup");
+        scheduleStartupRetry();
       } catch { hostError({ code: "internal_error" }); }
     };
     function dispose() {
@@ -80,6 +96,7 @@ export function createQuotaController(options: ControllerOptions) {
       disposed = true;
       lifetime.abort();
       if (tick !== undefined) clock.clearTimeout(tick);
+      if (retryTimer !== undefined) clock.clearTimeout(retryTimer);
       try { providers?.dispose(); } catch { /* 释放阶段丢弃原始异常。 */ }
       options.signal.removeEventListener("abort", dispose);
       disposeRoot();
