@@ -1,6 +1,6 @@
 import { PROVIDER_IDS } from "../core/contracts.ts";
-import type { ChannelView, HostProviders, ProviderServiceFactory, QuotaSnapshot, SafeError, TimeoutHandle } from "../core/contracts.ts";
-import { resolveCredential } from "./credentials.ts";
+import type { ChannelView, CredentialBundle, ProviderServiceFactory, QuotaSnapshot, SafeError, TimeoutHandle } from "../core/contracts.ts";
+import { record, resolveCredential } from "./credentials.ts";
 import type { Credential, CredentialResult } from "./credentials.ts";
 import { parserError, requestQuota, retryable } from "./http.ts";
 import { parseGlm } from "./glm.ts";
@@ -27,7 +27,7 @@ export const createProviderService: ProviderServiceFactory = (options) => {
   }));
   let disposed = false;
   let timer: TimeoutHandle | undefined;
-  let discovery: Promise<{ providers: HostProviders } | SafeError> | undefined;
+  let discovery: Promise<{ bundle: CredentialBundle } | SafeError> | undefined;
   let manualFlight: Promise<void> | undefined;
   let manualUntil = 0;
   let discoveryEpoch = 0;
@@ -54,10 +54,10 @@ export const createProviderService: ProviderServiceFactory = (options) => {
         const local = await host.checkLocal(lifetime.signal);
         if (!local.ok) return { code: local.error.code } as SafeError;
         if (disposed) return { code: "aborted" } as SafeError;
-        const providers = await host.readProviders(lifetime.signal);
+        const bundle = await host.readCredentials(lifetime.signal);
         if (disposed) return { code: "aborted" } as SafeError;
-        if (!Array.isArray(providers)) return { code: "host_unavailable" } as SafeError;
-        return { providers };
+        if (!record(bundle) || !record(bundle.list) || !Array.isArray(bundle.list.data)) return { code: "host_unavailable" } as SafeError;
+        return { bundle };
       } catch { return { code: "host_unavailable" } as SafeError; }
     })().finally(() => { discovery = undefined; });
     return discovery;
@@ -134,7 +134,7 @@ export const createProviderService: ProviderServiceFactory = (options) => {
           const latest = await discover();
           if (!valid(channel, generation) || epoch !== discoveryEpoch) return;
           if ("code" in latest) { failure(channel, latest); return; }
-          const resolved = resolveCredential(channel.view.providerId, latest.providers);
+          const resolved = resolveCredential(channel.view.providerId, latest.bundle, clock.now());
           if (!resolved.connected || "error" in resolved) { apply(channel, resolved); emit(); return; }
           if (resolved.credential.identityHash !== credential.identityHash) {
             // 保持当前单 flight 所有权，先隔离旧身份，再消耗同一轮的剩余一次预算。
@@ -191,7 +191,7 @@ export const createProviderService: ProviderServiceFactory = (options) => {
     for (const channel of channels) {
       const wasDue = clock.now() >= Math.max(channel.dueAt, channel.cooldownUntil);
       let resolved: CredentialResult;
-      try { resolved = resolveCredential(channel.view.providerId, latest.providers); }
+      try { resolved = resolveCredential(channel.view.providerId, latest.bundle, clock.now()); }
       catch { resolved = { connected: true, error: { code: "credentials_unavailable" } }; }
       const oldHash = channel.credential?.identityHash;
       apply(channel, resolved);

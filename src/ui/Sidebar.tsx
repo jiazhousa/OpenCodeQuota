@@ -44,7 +44,7 @@ function WindowRow(props: { window: Window; theme: TuiThemeCurrent; now: number;
   const barColor = () => !usable() ? props.theme.textMuted : props.theme.primary;
   // 标签固定 4 列（最长 "week"），条与数值在各窗口行之间列对齐。
   return <text id={props.id} wrapMode="none" flexShrink={0}>
-    <span style={{ fg: props.theme.text }}>{`${COMPACT_WINDOW_LABELS[props.window.kind].padEnd(4)} `}</span>
+    <span style={{ fg: props.theme.primary }}>{`${COMPACT_WINDOW_LABELS[props.window.kind].padEnd(4)} `}</span>
     <span style={{ fg: barColor() }}>{barText(props.window.usedPercent)}</span>
     <span style={{ fg: props.theme.text }}>{` ${formatPercent(props.window.usedPercent)} `}</span>
     <span style={{ fg: props.theme.textMuted }}>{formatCompactReset(props.window.resetAt, props.now)}</span>
@@ -70,7 +70,7 @@ export function ChannelBlock(props: { channel: ChannelView; theme: TuiThemeCurre
         <WindowRow id={`quota-bar-${props.channel.providerId}-${window.id}`} window={window} theme={props.theme} now={props.now} />}
       </For>
       <Show when={props.channel.providerId !== "deepseek" && snapshot().windows.length === 0}><text fg={props.theme.textMuted}>Windows: —</text></Show>
-      <For each={snapshot().balances}>{(balance) => <text fg={props.theme.text}>Balance {balance.currency} {balance.amount}</text>}</For>
+      <For each={snapshot().balances}>{(balance) => <text wrapMode="none" flexShrink={0}><span style={{ fg: props.theme.primary }}>Balance </span><span style={{ fg: props.theme.text }}>{balance.currency} {balance.amount}</span></text>}</For>
       <Show when={props.channel.providerId === "deepseek" && snapshot().balances.length === 0}><text fg={props.theme.textMuted}>Balance: —</text></Show>
       {/* 仅保留故障语义的「Account unavailable」，不展示「账户可用」。 */}
       <Show when={snapshot().available === false}><text fg={props.theme.textMuted}>Account unavailable</text></Show>

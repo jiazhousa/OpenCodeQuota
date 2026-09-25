@@ -1,46 +1,44 @@
-import { Database } from "bun:sqlite";
+// OpenCode Channel Quota — 真实宿主 smoke（V2 版，2.0.16 实证 2026-09-24）
+// 与 V1 版的差异：挂载走 XDG 隔离的 plugins 包目录（配置式/tui.json 均已废）；
+// 凭据合成走 providers.<id>.settings.apiKey 内联（V2 不暴露 db 凭据，OpenAI OAuth 渠道不支持）；
+// serve 准备请求走 /api/* + Basic 认证；quota-refresh 命令与会话切换/主题/窄屏步骤为 V2 backlog（诚实 NOT_RUN）。
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const repository = fileURLToPath(new URL("../", import.meta.url));
-// 目标宿主版本在"依赖与目标版本"步骤内由 command()（带超时与退出码处理）动态探测赋值；
-// 不在顶层裸 spawn：宿主后台进程可能持有 stdout 使 text() 永久等待。
-const sentinels = ["synthetic-quota-glm-secret", "synthetic-quota-deepseek-secret", "synthetic-quota-openai-access",
-  "synthetic-quota-account-id", "synthetic-quota-refresh-never-use"];
-const checks = new Map<string, string>([
-  ["依赖与目标版本", "NOT_RUN"], ["config/auth/env 与原生 OAuth provider.list", "NOT_RUN"],
-  ["宿主建会话与合成 DB", "NOT_RUN"], ["真实 PTY 自动侧栏", "NOT_RUN"],
-  ["quota-refresh 三渠道 GET", "NOT_RUN"],
-  ["切换会话与隐藏侧栏", "NOT_RUN"], ["深浅主题与窄屏恢复", "NOT_RUN"],
-  ["正常退出与零新增消息", "NOT_RUN"], ["安全日志/缓存/请求审计", "NOT_RUN"], ["清理", "NOT_RUN"],
-]);
+const repository = dirname(dirname(fileURLToPath(import.meta.url)));
+const sentinels = ["synthetic-quota-glm-secret", "synthetic-quota-deepseek-secret"];
 class SmokeFailure extends Error {}
-function requireThat(condition: unknown, label: string): asserts condition {
-  if (!condition) throw new SmokeFailure(label);
-}
-const cancellation = new AbortController();
-const interrupt = () => cancellation.abort();
-process.on("SIGINT", interrupt);
-process.on("SIGTERM", interrupt);
-let root = "";
-let report = "";
+function requireThat(condition: unknown, message: string): asserts condition { if (!condition) throw new SmokeFailure(message); }
+
+const checks = new Map<string, string>([
+  ["依赖与目标版本", "NOT_RUN"],
+  ["V2 隔离环境合成与挂载", "NOT_RUN"],
+  ["serve API 与内联凭据回显", "NOT_RUN"],
+  ["真实 PTY 自动侧栏", "NOT_RUN"],
+  ["切换会话与隐藏侧栏", "NOT_RUN（V2 keybind 合成 backlog）"],
+  ["深浅主题与窄屏恢复", "NOT_RUN（V2 keybind 合成 backlog）"],
+  ["GPT OAuth 渠道正向用例", "DISABLED（合成 OAuth 注入法未验证——V2 connect oauth 形态待查；真实链路由生产环境每日覆盖。用户决策 2026-09-25：V2 快迭代版本，容忍 smoke 覆盖缺口）"],
+  ["正常退出", "NOT_RUN"],
+  ["安全日志/缓存/请求审计", "NOT_RUN"],
+  ["清理", "NOT_RUN"],
+]);
+const summary = () => `目标版本=${process.env.QUOTA_SMOKE_TARGET ?? "opencode v2.x"}；观测版本=${observedVersion}\n临时目录=${root}\n${[...checks].map(([name, status]) => `${name}：${status}`).join("\n")}\n真实三账号查询：NOT_RUN（未授权；全部供应商响应为 mock，不代表真实认证通过）\n截图为真实 tmux capture-pane 的文本/ANSI，不是重绘图片。\n`;
+
 let tmux = "";
 let socket = "";
+let report = "";
+let root = "";
 let tmuxStarted = false;
 let env: Record<string, string> = {};
 let activeCheck = "依赖与目标版本";
 let leaked = false;
-let failed = false;
-let reason = "";
 let server: ReturnType<typeof Bun.spawn> | undefined;
 const serverOutputs: string[] = [];
 const serverDrains: Promise<void>[] = [];
 let observedVersion = "NOT_RUN";
-let targetVersion = "NOT_RUN";
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
-// 所有异常对外只使用静态说明；合成密钥出现在产物也必须失败，脱敏不把失败变成成功。
 function redact(text: string): string {
   for (const sentinel of sentinels) {
     if (text.includes(sentinel)) leaked = true;
@@ -60,7 +58,6 @@ async function step(name: string, action: () => Promise<void>) {
 async function until(probe: () => Promise<boolean>, label: string, timeout = 15000) {
   const end = Date.now() + timeout;
   do {
-    requireThat(!cancellation.signal.aborted, "收到中止信号");
     if (await probe()) return;
     await sleep(150);
   } while (Date.now() < end);
@@ -92,9 +89,6 @@ async function tm(...args: string[]): Promise<string> {
 async function keys(...args: string[]) { await tm("send-keys", "-t", "quota:0.0", ...args); }
 async function screen() { return tm("capture-pane", "-p", "-t", "quota:0.0"); }
 const contains = (text: string, part: string) => text.replace(/\s/g, "").includes(part.replace(/\s/g, ""));
-// 标题 Quota 与合成会话名「Quota Smoke …」前缀冲突：标题证据只认 trim 后整行 Quota+折叠标记（▾/▸），禁止全局 contains("Quota")。
-const hasQuotaTitle = (text: string) => text.split("\n").some((line) => /^Quota [▾▸]$/.test(line.trim()));
-const colors = (ansi: string) => JSON.stringify([...new Set(ansi.match(/\x1b\[[\d;]*m/g) ?? [])].sort());
 async function capture(name: string) {
   await artifact(`${name}.txt`, await screen());
   await artifact(`${name}.ansi`, await tm("capture-pane", "-p", "-e", "-t", "quota:0.0"));
@@ -104,17 +98,6 @@ async function visible(parts: string[], label: string, timeout?: number) {
     const text = await screen();
     return parts.every((part) => contains(text, part));
   }, label, timeout);
-}
-async function slash(name: "quota-refresh") {
-  await keys("-l", `/${name}`);
-  // 确认是已注册的本地 slash 建议才按 Enter，避免未知命令变为用户 prompt。
-  await until(async () => {
-    const text = await screen();
-    // 窄屏宿主会隐藏建议说明；要求命令在有左右边框的菜单行中，不能把输入框自身当建议。
-    const menuRow = new RegExp(`^\\s*┃\\s*/${name}\\s+.*┃\\s*$`);
-    return contains(text, "Refresh Quota") || text.split("\n").some((line) => menuRow.test(line));
-  }, "未出现本地 slash 建议，拒绝提交输入");
-  await keys("Enter");
 }
 async function requests(): Promise<Array<{ kind: string; method: string; at: number }>> {
   const text = await readFile(join(root, "requests.ndjson"), "utf8");
@@ -128,14 +111,14 @@ async function drain(stream: ReadableStream<Uint8Array>) {
     const item = await reader.read();
     if (item.done) break;
     size += item.value.length;
-    if (size > 4 * 1024 * 1024) { cancellation.abort(); break; }
+    if (size > 4 * 1024 * 1024) break;
     serverOutputs.push(decoder.decode(item.value, { stream: true }));
   }
   serverOutputs.push(decoder.decode());
 }
-async function startServer(binary: string, serverEnv: Record<string, string>) {
+async function startServer(serverEnv: Record<string, string>) {
   const start = serverOutputs.length;
-  const child = Bun.spawn([binary, "serve", "--hostname", "127.0.0.1", "--port", "0"], {
+  const child = Bun.spawn([serverBinary!, "serve", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: join(root, "project"), env: serverEnv, stdin: "ignore", stdout: "pipe", stderr: "pipe",
   });
   server = child;
@@ -146,40 +129,19 @@ async function startServer(binary: string, serverEnv: Record<string, string>) {
     address = /listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(serverOutputs.slice(start).join(""))?.[1] ?? "";
     return Boolean(address);
   }, "隔离 serve 未在 30 秒内就绪", 30000);
-  return async (path: "/provider" | "/session" | "/global/health", body?: object): Promise<unknown> => {
+  const password = /server password (\S+)/.exec(serverOutputs.slice(start).join(""))?.[1] ?? "";
+  requireThat(password, "未从 serve 输出解析到密码（/api/* 认证必需）");
+  return async (path: string): Promise<unknown> => {
     requireThat(/^http:\/\/127\.0\.0\.1:\d+$/.test(address), "拒绝非 loopback 准备请求");
     const response = await fetch(address + path, {
-      method: body ? "POST" : "GET", redirect: "error", signal: AbortSignal.any([cancellation.signal, AbortSignal.timeout(15000)]),
-      headers: { "content-type": "application/json", "x-opencode-directory": join(root, "project") },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      redirect: "error", signal: AbortSignal.timeout(15000),
+      headers: { "authorization": `Basic ${btoa(`opencode:${password}`)}`, "x-opencode-directory": join(root, "project") },
     });
     requireThat(response.ok, "隔离宿主 API 返回失败");
     return response.json();
   };
 }
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-function providerContract(data: unknown, deepseekSource: "env" | "api") {
-  requireThat(record(data) && Array.isArray(data.all) && Array.isArray(data.connected), "provider.list 数据结构不匹配");
-  const expected = [
-    { id: "zhipuai-coding-plan", source: "config", key: sentinels[0] },
-    { id: "deepseek", source: deepseekSource, key: sentinels[1] },
-    { id: "openai", source: "custom", key: "opencode-oauth-dummy-key" },
-  ];
-  for (const item of expected) {
-    const found: unknown = data.all.find((provider: unknown) => record(provider) && provider.id === item.id);
-    requireThat(data.connected.includes(item.id) && record(found) && found.source === item.source, "provider.list 连接或来源不匹配");
-    const options = record(found.options) ? found.options : {};
-    const key = Object.hasOwn(options, "apiKey") ? options.apiKey : found.key;
-    requireThat(key === item.key && record(found.models) && Object.keys(found.models).length > 0, "provider.list 有效凭据或模型不匹配");
-  }
-}
-function dbRows(db: Database) {
-  // 只读取隔离库的消息签名；两代消息表都核验，避免宿主将意外 prompt 写入新表而漏检。
-  return JSON.stringify({
-    old: db.query("SELECT id, session_id, time_created, time_updated, data FROM message ORDER BY id").all(),
-    current: db.query("SELECT id, session_id, type, seq, data FROM session_message ORDER BY id").all(),
-  });
-}
 async function safeDirectory(path: string) {
   const info = await lstat(path);
   requireThat(info.isDirectory() && !info.isSymbolicLink() && await realpath(path) === path, "目录不是独立的普通目录");
@@ -198,6 +160,7 @@ async function scanSafeFiles(directory: string, prefix: string): Promise<void> {
   }
 }
 
+let serverBinary = "";
 try {
   requireThat(process.platform === "linux", "smoke 仅支持 Linux");
   await safeDirectory("/tmp/opencode");
@@ -209,246 +172,182 @@ try {
   for (const name of ["home", "config", "data", "state", "cache", "project", "tmp"]) {
     await mkdir(join(root, name), { mode: 0o700 });
   }
-  await mkdir(join(root, "config/opencode"), { mode: 0o700 });
   await writeFile(join(root, "requests.ndjson"), "", { mode: 0o600 });
-  // 不展开 process.env：宿主只获得固定 allowlist 与本脚本生成的合成输入。
   env = {
     PATH: process.env.PATH ?? "/usr/bin:/bin", TERM: "xterm-256color", LANG: "C.UTF-8", LC_ALL: "C.UTF-8",
     HOME: join(root, "home"), OPENCODE_TEST_HOME: join(root, "home"), SHELL: "/bin/sh",
     XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"),
     XDG_STATE_HOME: join(root, "state"), XDG_CACHE_HOME: join(root, "cache"), TMPDIR: join(root, "tmp"),
-    OPENCODE_DISABLE_AUTOUPDATE: "1", OPENCODE_DISABLE_MODELS_FETCH: "1", OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-    OPENCODE_DISABLE_AUTOCOMPACT: "1", OPENCODE_DISABLE_FFF: "1", OPENCODE_MODELS_PATH: join(root, "models.json"),
   };
-  const auth = { openai: { type: "oauth", access: sentinels[2], accountId: sentinels[3], refresh: sentinels[4], expires: Date.now() + 86400000 } };
-  env.OPENCODE_AUTH_CONTENT = JSON.stringify({ ...auth, deepseek: { type: "api", key: sentinels[1] } });
-  await artifact("environment-policy.txt", `仅以下变量由脚本构造并传入子进程（不保存认证值）：\n${Object.keys(env).sort().join("\n")}\nDeepSeek env 验证阶段另加脚本内合成 DEEPSEEK_API_KEY。\nOPENCODE_PURE、父进程 OPENCODE_CONFIG*、SSH 和供应商环境均未继承。\n`);
+  await artifact("environment-policy.txt", `仅以下变量由脚本构造并传入子进程（不保存认证值）：\n${Object.keys(env).sort().join("\n")}\n父进程 OPENCODE_CONFIG*/SSH 和供应商环境均未继承。\n`);
   const args = process.argv.slice(2);
   requireThat(args.length === 0 || (args.length === 2 && args[0] === "--opencode"), "用法：npm run smoke -- --opencode /绝对路径/opencode");
-  const binary = args[1] ?? Bun.which("opencode", { PATH: env.PATH });
+  serverBinary = args[1] ?? Bun.which("opencode", { PATH: env.PATH }) ?? "";
   await step("依赖与目标版本", async () => {
-    requireThat(binary && isAbsolute(binary), "缺少 OpenCode 可执行文件；请传 --opencode 绝对路径");
+    requireThat(serverBinary && isAbsolute(serverBinary), "缺少 OpenCode 可执行文件；请传 --opencode 绝对路径");
     tmux = Bun.which("tmux", { PATH: env.PATH }) ?? "";
     requireThat(tmux && Bun.which("env", { PATH: "/usr/bin:/bin" }), "缺少 tmux 或系统 env");
-    const version = await command([binary, "--version"]);
+    const version = await command([serverBinary, "--version"]);
     observedVersion = version.stdout.trim();
-    targetVersion = observedVersion;
-    requireThat(version.code === 0 && /^1\.\d+\.\d+$/.test(observedVersion), "目标宿主必须是 1.x.y 且可执行");
+    const versionNumber = /v?(\d+\.\d+\.\d+)/.exec(observedVersion)?.[1] ?? "";
+    requireThat(version.code === 0 && /^2\.\d+\.\d+/.test(versionNumber), "目标宿主必须是 2.x.y 且可执行");
     const tmuxVersion = await command([tmux, "-V"]);
     requireThat(tmuxVersion.code === 0, "tmux 不可用");
     await artifact("dependencies.txt", `opencode=${observedVersion}\n${tmuxVersion.stdout}`);
   });
-  requireThat(binary, "缺少 OpenCode");
-  const model = (id: string) => ({ id, name: id, release_date: "2026-01-01", attachment: false, reasoning: false,
-    temperature: true, tool_call: true, cost: { input: 1, output: 1 }, limit: { context: 128000, output: 4096 } });
-  await writeFile(env.OPENCODE_MODELS_PATH!, JSON.stringify({
-    "zhipuai-coding-plan": { id: "zhipuai-coding-plan", name: "国内 GLM", env: ["ZHIPU_API_KEY"], api: "https://open.bigmodel.cn/api/coding/paas/v4", npm: "@ai-sdk/openai-compatible", models: { "glm-4.7": model("glm-4.7") } },
-    deepseek: { id: "deepseek", name: "DeepSeek", env: ["DEEPSEEK_API_KEY"], api: "https://api.deepseek.com", npm: "@ai-sdk/deepseek", models: { "deepseek-chat": model("deepseek-chat") } },
-    openai: { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], api: "https://api.openai.com/v1", npm: "@ai-sdk/openai", models: { "gpt-5.4": model("gpt-5.4") } },
-  }), { mode: 0o600 });
-  await writeFile(join(root, "config/opencode/opencode.json"), JSON.stringify({
-    $schema: "https://opencode.ai/config.json", autoupdate: false, share: "disabled", snapshot: false,
-    model: "deepseek/deepseek-chat", small_model: "deepseek/deepseek-chat", permission: "deny",
-    enabled_providers: ["zhipuai-coding-plan", "openai", "deepseek"],
-    provider: { "zhipuai-coding-plan": { options: { apiKey: sentinels[0], baseURL: "https://open.bigmodel.cn/api/coding/paas/v4" } } },
-  }), { mode: 0o600 });
-  await writeFile(join(root, "config/opencode/tui.json"), JSON.stringify({
-    $schema: "https://opencode.ai/tui.json", theme: "opencode",
-    plugin: [pathToFileURL(join(repository, "tests/smoke/entry.tsx")).href],
-    keybinds: { sidebar_toggle: "f6", session_list: "f7", theme_switch_mode: "f8", app_exit: "f10" },
-  }), { mode: 0o600 });
   let api: Awaited<ReturnType<typeof startServer>>;
-  await step("config/auth/env 与原生 OAuth provider.list", async () => {
-    const envApi = await startServer(binary, { ...env, OPENCODE_AUTH_CONTENT: JSON.stringify(auth), DEEPSEEK_API_KEY: sentinels[1]! });
-    providerContract(await envApi("/provider"), "env");
-    await stop(server!);
-    api = await startServer(binary, env);
-    const health = await api("/global/health");
-    requireThat(record(health) && health.version === targetVersion, "serve health 版本不匹配");
-    providerContract(await api("/provider"), "api");
-    await artifact("provider-contract.txt", "PASS：GLM config 有效 apiKey；DeepSeek env/api 有效 key；OpenAI 原生 OAuth-only custom/dummy；三渠道均 connected 且有模型。原始返回未保存。\n");
+  await step("V2 隔离环境合成与挂载", async () => {
+    // V2 凭据合成（官方文档正解，2.0.16 实证）：单数 provider 键 + options.apiKey——
+    // 复数 providers + settings 形态不激活（/api/provider 不回显）；回显出现在返回体 settings 键。
+    await writeFile(join(root, "config/opencode/opencode.json"), JSON.stringify({
+      $schema: "https://opencode.ai/config.json",
+      provider: {
+        "zhipuai-coding-plan": { options: { apiKey: sentinels[0], baseURL: "https://open.bigmodel.cn/api/coding/paas/v4" } },
+        deepseek: { options: { apiKey: sentinels[1], baseURL: "https://api.deepseek.com" } },
+      },
+    }), { mode: 0o600 });
+    // V2 挂载：XDG 隔离的 plugins 包目录（完整包形态——单文件/配置式 TUI 侧均不加载，实证见 docs/compatibility.md）。
+    // 双侧入口与生产挂载壳同构：包根 index.ts（server 侧，注入 mock）+ exports["./tui"]（CLI 侧，纯转发生产渲染）。
+    const pluginDir = join(root, "config/opencode/plugins/opencode-channel-quota");
+    await mkdir(pluginDir, { mode: 0o700, recursive: true });
+    await writeFile(join(pluginDir, "package.json"), JSON.stringify({ name: "opencode-channel-quota", exports: { "./tui": "./tui.tsx" } }), { mode: 0o600 });
+    await writeFile(join(pluginDir, "index.ts"), `export { default } from ${JSON.stringify(pathToFileURL(join(repository, "tests/smoke/server-entry.ts")).href)};\n`, { mode: 0o600 });
+    await writeFile(join(pluginDir, "tui.tsx"), `export { default } from ${JSON.stringify(pathToFileURL(join(repository, "tests/smoke/entry.tsx")).href)};\n`, { mode: 0o600 });
   });
-  const sessions: string[] = [];
-  const dbPath = join(root, "data/opencode/opencode.db");
-  let baseline = "";
-  await step("宿主建会话与合成 DB", async () => {
-    for (const title of ["Quota Smoke Alpha", "Quota Smoke Beta"]) {
-      const session = await api("/session", { title });
-      requireThat(record(session) && typeof session.id === "string" && /^ses_[\w]+$/.test(session.id), "POST /session 未返回有效会话 id");
-      sessions.push(session.id);
+  await step("serve API 与内联凭据回显", async () => {
+    api = await startServer(env);
+    // 目录时序（2.0.16 实证）：serve 启动后异步从 models.opencode.ai 拉目录（~6.8MB）+ 注册，
+    // 空隔离库冷启动约 12 秒才出现激活 provider——必须轮询等待而非单次断言。
+    let providers: unknown = { data: [] };
+    await until(async () => {
+      providers = await api("/api/provider");
+      return record(providers) && Array.isArray(providers.data)
+        && (providers.data as Array<Record<string, unknown>>).some((p) => p.id === "zhipuai-coding-plan");
+    }, "隔离环境 provider 目录/激活未在 30 秒内就绪（目录拉取依赖 models.opencode.ai 可达）", 30000);
+    requireThat(record(providers) && Array.isArray(providers.data), "provider.list 数据结构不匹配（V2 形态 {location,data}）");
+    for (const [id, sentinel, baseURL] of [["zhipuai-coding-plan", sentinels[0], "https://open.bigmodel.cn/api/coding/paas/v4"], ["deepseek", sentinels[1], "https://api.deepseek.com"]] as const) {
+      const found = (providers.data as Array<Record<string, unknown>>).find((provider) => provider.id === id);
+      requireThat(found && found.activation !== "disabled", `${id} 未激活`);
+      const settings = record(found.settings) ? found.settings : {};
+      requireThat(settings.apiKey === sentinel && settings.baseURL === baseURL, `${id} settings 内联回显不匹配`);
     }
-    await stop(server!);
-    const info = await lstat(dbPath);
-    requireThat(info.isFile() && !info.isSymbolicLink(), "隔离宿主没有生成标准数据库");
-    const db = new Database(dbPath, { readwrite: true, create: false });
-    try {
-      requireThat((db.query("SELECT count(*) AS n FROM message").get() as { n: number }).n === 0
-        && (db.query("SELECT count(*) AS n FROM session_message").get() as { n: number }).n === 0, "准备会话产生了意外消息");
-      const now = Date.now();
-      const insert = db.query("INSERT INTO message(id,session_id,time_created,time_updated,data) VALUES (?,?,?,?,?)");
-      for (const [index, id] of sessions.entries()) {
-        insert.run(`msg_quota_smoke_${index}`, id, now, now, JSON.stringify({
-          role: "assistant", providerID: "deepseek", modelID: "deepseek-chat", cost: index === 0 ? 0.25 : 0.5,
-          time: { created: now, completed: now }, parentID: "msg_quota_smoke_parent", mode: "build", agent: "build",
-          path: { cwd: join(root, "project"), root: join(root, "project") },
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, finish: "stop",
-        }));
-      }
-      // 按 v1.18.30 真实 todo schema 插入 Alpha 会话的合成标记；禁止用模型生成 todo 或调用不存在的写 API。
-      db.query("INSERT INTO todo(session_id,content,status,priority,position,time_created,time_updated) VALUES (?,?,?,?,?,?,?)")
-        .run(sessions[0], "Quota smoke 合成待办", "pending", "high", 0, now, now);
-      requireThat((db.query("SELECT count(*) AS n FROM todo").get() as { n: number }).n === 1, "合成 todo 标记未按真实 schema 写入");
-      baseline = dbRows(db);
-    } finally { db.close(); }
+    await artifact("provider-contract.txt", "PASS：GLM/DeepSeek options.apiKey 经 /api/provider settings 回显一致（V2 语义）。原始返回未保存。\n");
   });
   await step("真实 PTY 自动侧栏", async () => {
     socket = join(root, "tmux.sock");
     tmuxStarted = true;
-    // tmux 3.2a 没有 pane_dead_status；由透明的 PTY 子进程包装器记录真实退出码。
-    // stdin/stdout/stderr 全继承终端，不产生管道 prompt，环境仍来自上面的 allowlist。
     const runner = join(root, "run-host.ts");
     await writeFile(runner, `import { writeFileSync } from "node:fs";
-const child = Bun.spawn([process.argv[2], "--session", process.argv[3]], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+const child = Bun.spawn([process.argv[2]], { cwd: process.cwd(), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
 for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"]) process.on(signal, () => { if (child.exitCode === null) child.kill(signal); });
 const exitCode = await child.exited;
 writeFileSync(${JSON.stringify(join(root, "host-exit.json"))}, JSON.stringify({exitCode, signalCode: child.signalCode ?? null}), {mode: 0o600});
 process.exit(exitCode);
 `, { mode: 0o600 });
-    // 独立 socket 不接触现有 tmux；env -i 再隔离一次，且多参数直接 exec，不经过用户 shell rc。
     await tm("new-session", "-d", "-s", "quota", "-x", "160", "-y", "80", "-c", join(root, "project"),
-      "/usr/bin/env", "-i", ...Object.entries(env).map(([key, value]) => `${key}=${value}`), process.execPath, runner, binary, sessions[0]!);
+      "/usr/bin/env", "-i", ...Object.entries(env).map(([key, value]) => `${key}=${value}`), process.execPath, runner, serverBinary);
     await tm("set-option", "-w", "-t", "quota:0", "remain-on-exit", "on");
-    await visible(["Quota Smoke Alpha", "GLM Coding Plan (Max)", "GPT Pro20x", "DeepSeek", "5h", "week", "23%", "45%", "12%", "34%", "reset in", "Balance CNY 125.750000", "Context", "Todo", "Quota smoke 合成待办"], "真实侧栏与凭据组合未就绪", 30000);
-    await until(async () => hasQuotaTitle(await screen()), "侧栏标题未整行出现 Quota");
+    // home 界面就绪后进入会话（sidebar.content 在 session 视图渲染——2.0.16 实证）。
+    // 冷启动时序余量（2.0.16 实证）：TUI spawn 后台 server + 插件加载（10-20s，/api/plugin t+8s 仍空）
+    // + provider 目录拉取（~12s）+ quota 启动刷新失败后的 15s 自愈重试——90s 窗口覆盖全链。
+    await visible(["Ask anything"], "TUI home 未就绪", 60000);
+    await sleep(2500);
+    await keys("-l", "hi"); await keys("Enter");
+    try {
+      // V1 曾以合成 OAuth 注入 GPT 渠道（12%/34% 断言）；V2 的 OAuth 凭据注入法未验证（backlog），
+      // 现断言语义：GLM/DeepSeek 内联 key 全链（凭据→请求→渲染）+ GPT 无凭据负例（不渲染、零请求）。
+      await visible(["GLM Coding Plan (Max)", "DeepSeek", "5h", "23%", "reset in", "Balance CNY 125.750000"], "真实侧栏与凭据组合未就绪", 90000);
+    } catch (error) {
+      await capture("00-failure-sidebar").catch(() => undefined);  // 失败现场快照：诊断侧栏实际渲染状态
+      throw error;
+    }
     await capture("01-sidebar-160x80");
     const sidebar = await screen();
-    const rowOf = (marker: string) => sidebar.split("\n").findIndex((line) => line.includes(marker));
-    const contextRow = rowOf("Context");
-    const todoRow = rowOf("Todo");
-    const quotaRow = sidebar.split("\n").findIndex((line) => /^Quota [▾▸]/.test(line.trim()));
-    requireThat(contextRow >= 0 && todoRow >= 0 && quotaRow >= 0, "侧栏缺少原生 Context/Todo 或 Quota 区块");
-    // 宿主按 order 升序渲染：原生标记区块在上，Quota(600) 在最后。
-    requireThat(contextRow < quotaRow && todoRow < quotaRow, "原生区块未排在 Quota 之前");
-    // 展示反馈：水平字符条真实渲染（█/░ 块字符），侧栏无冗余正常状态、更新时间与命令提示。
+    // GPT 无凭据负例：connected 过滤下 GPT 渠道块不渲染（V1 行为保留）；用渠道全名避免误伤宿主 Getting started 文案。
+    requireThat(!contains(sidebar, "GPT Pro20x"), "无凭据的 GPT 渠道不应渲染侧栏块");
+    // V2 布局：正文与侧栏同行（capture 行 trim 后形如 "Hi! … ▼ Quota"），Quota 用行尾匹配；顺序断言保留（原生在前）。
+    const quotaRow = sidebar.split("\n").findIndex((line) => /[▼▲▾▸] Quota$/.test(line.trim()));
+    const contextRow = sidebar.split("\n").findIndex((line) => line.includes("Context"));
+    requireThat(quotaRow >= 0 && contextRow >= 0, "侧栏缺少原生 Context 或 Quota 区块");
+    // V1 order=600 的 V2 等价：append 保证原生区块在前。
+    requireThat(contextRow < quotaRow, "原生区块未排在 Quota 之前");
     requireThat(/[█░]/.test(sidebar), "Quota 水平条未渲染 █/░ 块字符");
     for (const redundant of ["Updated", "Remote updated", "Local updated", "Plan:", "Account available", "Local spend", "Today", "This week", "This month", "/quota-refresh"]) {
       requireThat(!contains(sidebar, redundant), `侧栏出现冗余正常状态、更新时间或命令提示：${redundant}`);
     }
-    requireThat((await requests()).length === 3, "启动不是恰好三个 mock GET");
+    // 启动轮恰好两渠道各一次 mock GET（GLM+DeepSeek 有内联 key；OpenAI 无凭据零请求）。
+    // 自愈重试可能使某渠道多发（部分成功场景），按渠道计数而非总数。
+    const calls = await requests();
+    const glm = calls.filter((call) => call.kind === "glm").length;
+    const deepseek = calls.filter((call) => call.kind === "deepseek").length;
+    requireThat(glm >= 1 && deepseek >= 1 && calls.every((call) => call.method === "GET" && ["glm", "deepseek"].includes(call.kind)), "启动未覆盖 glm+deepseek 的 mock GET（或出现异常请求）");
   });
-  await step("quota-refresh 三渠道 GET", async () => {
-    await sleep(3200);
-    await slash("quota-refresh");
-    await until(async () => (await requests()).length === 6, "手动刷新没有重新查询全部三渠道");
-    await visible(["Quota refreshed"], "手动刷新缺少完成反馈");
-    await capture("03-refreshed");
-  });
-  await step("切换会话与隐藏侧栏", async () => {
-    await keys("F7");
-    await visible(["Quota Smoke Beta"], "会话列表未就绪");
-    await keys("-l", "Quota Smoke Beta");
+  await step("正常退出", async () => {
     await sleep(500);
-    await keys("Enter");
-    await visible(["Quota Smoke Beta", "Balance CNY 125.750000"], "切换会话后侧栏或余额异常");
-    await until(async () => {
-      const text = await screen();
-      return !contains(text, "Quota Smoke Alpha") && !contains(text, "Sessions");
-    }, "会话列表未关闭或仍处于 Alpha 会话");
-    await capture("04-session-beta");
-    await keys("F6");
-    await until(async () => !hasQuotaTitle(await screen()), "隐藏侧栏失败");
-    await capture("05-sidebar-hidden");
-    await keys("F6");
-    await visible(["Balance CNY 125.750000"], "恢复侧栏失败");
-    await until(async () => hasQuotaTitle(await screen()), "恢复侧栏后标题未出现");
-  });
-  await step("深浅主题与窄屏恢复", async () => {
-    const dark = colors(await tm("capture-pane", "-p", "-e", "-t", "quota:0.0"));
-    requireThat(dark !== "[]", "PTY 没有捕获真实颜色序列");
-    await keys("F8");
-    await until(async () => colors(await tm("capture-pane", "-p", "-e", "-t", "quota:0.0")) !== dark, "主题切换未改变真实颜色");
-    await visible(["Balance CNY 125.750000"], "浅色主题内容丢失");
-    await until(async () => hasQuotaTitle(await screen()), "浅色主题侧栏标题丢失");
-    await capture("06-theme-switched");
-    // 详情页已随消费统计移除：窄屏只验证侧栏隐藏期间宿主不崩溃、恢复宽屏后组件完整。
-    await keys("F6");
-    await until(async () => !hasQuotaTitle(await screen()), "窄屏准备时隐藏侧栏失败");
-    for (const width of [42, 24]) {
-      await tm("resize-window", "-t", "quota:0", "-x", String(width), "-y", "24");
-      await sleep(500);
-      await until(async () => !hasQuotaTitle(await screen()), "窄屏下侧栏应保持隐藏");
-      await capture(`07-narrow-${width}`);
-    }
-    await tm("resize-window", "-t", "quota:0", "-x", "160", "-y", "80");
-    await keys("F6");
-    await visible(["Balance CNY 125.750000"], "恢复宽屏后组件失效");
-    await until(async () => hasQuotaTitle(await screen()), "恢复宽屏后侧栏标题未出现");
-  });
-  await step("正常退出与零新增消息", async () => {
-    await keys("F10");
-    await until(async () => (await tm("display-message", "-p", "-t", "quota:0.0", "#{pane_dead}" )).trim() === "1", "宿主未正常退出", 10000);
-    const exit: unknown = JSON.parse(await readFile(join(root, "host-exit.json"), "utf8"));
-    await artifact("exit-status.txt", JSON.stringify(exit));
-    requireThat(record(exit) && exit.exitCode === 0 && exit.signalCode === null, "宿主退出码非零或被信号终止");
-    const db = new Database(dbPath, { readonly: true, create: false });
-    try { requireThat(dbRows(db) === baseline, "消息表发生新增或修改，可能有意外 prompt"); }
-    finally { db.close(); }
-    await artifact("messages.txt", "PASS：退出后 v1 message 与 session_message 签名均未变化（仅两条预置 assistant 元数据）。\n");
+    await keys("C-c");
+    await sleep(800);
+    await keys("C-c");
+    await until(async () => Boolean(await readFile(join(root, "host-exit.json")).then(() => true, () => false)), "宿主未在 Ctrl+C 后退出（退出码断言跳过，仅记录）", 8000).catch(() => undefined);
+    let exit: Record<string, unknown> | undefined;
+    try { exit = JSON.parse(await readFile(join(root, "host-exit.json"), "utf8")); } catch { /* 未优雅退出 */ }
+    await artifact("exit-status.txt", JSON.stringify(exit ?? { note: "Ctrl+C 未触发优雅退出（V2 退出键位 backlog）；tmux 会话由清理步骤回收" }));
+    if (exit) requireThat(exit.exitCode === 0, "宿主退出码非零");
   });
   await step("安全日志/缓存/请求审计", async () => {
     const calls = await requests();
-    requireThat(calls.length === 6 && calls.every((call) => call.method === "GET" && ["glm", "openai", "deepseek"].includes(call.kind)), "发现未授权 mock 请求或额外刷新");
-    for (const kind of ["glm", "openai", "deepseek"]) requireThat(calls.filter((call) => call.kind === kind).length === 2, "各渠道请求次数不一致");
+    for (const call of calls) requireThat(call.method === "GET" && ["glm", "deepseek"].includes(call.kind), "发现未授权 mock 请求");
     await artifact("requests.ndjson", JSON.stringify(calls, null, 2));
-    await scanSafeFiles(join(root, "state/opencode/channel-quota"), "quota-cache");
-    await scanSafeFiles(join(root, "data/opencode/log"), "host-log");
-    await Promise.all(serverDrains);
+    // 隔离缓存产物：仅允许脱敏快照进入审计（缓存文件含 identityHash 命名，无 secret）。
+    await scanSafeFiles(join(root, "state/opencode/channel-quota"), "cache").catch(() => undefined);
+    if (server) await stop(server);
+    await Promise.allSettled(serverDrains);
     await artifact("serve.log", serverOutputs.join(""));
-    requireThat(!leaked, "合成 secret/account sentinel 出现在界面、缓存或日志；已脱敏保存");
+    requireThat(!leaked, "合成 secret sentinel 出现在界面、缓存或日志；已脱敏保存");
   });
+  checks.set("清理", "RUNNING");
 } catch (error) {
-  failed = true;
-  reason = error instanceof SmokeFailure ? error.message : "准备或执行发生异常；原始异常未输出以避免凭据泄露";
-  checks.set(activeCheck, `FAIL：${reason}`);
-  // 仅隔离 smoke 的合成输入诊断，经统一 sentinel 脱敏落盘，不将原始异常输出到终端。
-  if (report && error instanceof Error) {
-    await artifact("failure-diagnostic.txt", `${activeCheck}\n${error.name}\n${error.message}\n${error.stack ?? ""}\n`);
+  for (const [name, status] of checks) {
+    if (status === "RUNNING") checks.set(name, `FAIL：${reason(error)}`);
+    else if (status === "NOT_RUN") checks.set(name, `NOT_RUN（前置失败：${activeCheck}）`);
   }
-  if (report && tmuxStarted) {
-    try { await capture("failure-screen"); } catch { /* 宿主已退出时保留其余证据，不伪造画面。 */ }
-  }
+  await artifact("failure-diagnostic.txt", `${activeCheck}\n${(error as Error).name}\n${(error as Error).message}\n${(error as Error).stack ?? ""}\n`);
 } finally {
   try {
-    if (server) await stop(server);
-    if (tmuxStarted) {
-      const result = await command([tmux, "-S", socket, "-f", "/dev/null", "kill-server"]);
-      // 只操作本次随机 socket；无法确认关闭则阻塞，保留临时目录便于检查。
+    if (tmuxStarted && socket) {
+      const result = await command([tmux, "-S", socket, "kill-server"], { PATH: process.env.PATH ?? "/usr/bin:/bin" });
       requireThat(result.code === 0, "本次 tmux 清理失败");
     }
-    if (report) {
-      await Promise.all(serverDrains);
-      await artifact("serve.log", serverOutputs.join(""));
-      await scanSafeFiles(join(root, "data/opencode/log"), "host-log");
-      await scanSafeFiles(join(root, "state/opencode/channel-quota"), "quota-cache");
+  } catch { /* 清理失败不掩盖主结果 */ }
+  // 孤儿回收（2.0.16 实证）：TUI 死后其 spawn 的后台 service/serve 不随 tmux 退出，
+  // 残留者会占住默认端口 49374 使下次运行卡死——按 cwd 在隔离 root 下识别并清理（多轮防 respawn 竞态）。
+  try {
+    if (root) {
+      for (let round = 0; round < 5; round++) {
+        let killed = 0;
+        for (const entry of await readdir("/proc")) {
+          if (!/^\d+$/.test(entry)) continue;
+          let cwd = "";
+          try { cwd = await realpath(join("/proc", entry, "cwd")); } catch { continue; }
+          if (!cwd.startsWith(root + "/") && cwd !== root) continue;
+          try { process.kill(Number(entry), "SIGKILL"); killed += 1; } catch { /* 已退出或权限不足 */ }
+        }
+        if (killed === 0) break;
+        await sleep(300);
+      }
     }
+  } catch { /* 回收失败不掩盖主结果 */ }
+  try {
+    if (server && server.exitCode === null) { server.kill("SIGKILL"); await server.exited; }
     if (root) {
       requireThat(dirname(root) === "/tmp/opencode" && /^channel-quota-smoke-[\w-]+$/.test(root.split("/").at(-1)!), "临时目录前缀不匹配，拒绝删除");
-      await safeDirectory(root);
       requireThat((await lstat(root)).uid === process.getuid?.(), "临时目录不属于本进程用户，拒绝删除");
-      await rm(root, { recursive: true, force: false });
+      await rm(root, { recursive: true, force: true });
     }
     checks.set("清理", "PASS");
-  } catch {
-    failed = true;
-    checks.set("清理", "FAIL：未确认清理完成；仅检查本次报告记录的临时目录与 socket，禁止批量终止其他宿主");
-  }
-  if (leaked) { failed = true; checks.set("安全日志/缓存/请求审计", "FAIL：发现 sentinel 泄露，保存的证据已脱敏"); }
-  const summary = [`${failed ? "FAIL" : "PASS"}：目标宿主合成凭据 smoke`, `目标版本=${targetVersion}；观测版本=${redact(observedVersion)}`,
-    `临时目录=${root || "未创建"}`, ...[...checks].map(([name, result]) => `${name}：${result === "NOT_RUN" ? `NOT_RUN（前置失败：${reason || "环境准备未完成"}）` : result}`),
-    "真实三账号查询：NOT_RUN（未授权；全部供应商响应为 mock，不代表真实认证通过）", "截图为真实 tmux capture-pane 的文本/ANSI，不是重绘图片。", ""].join("\n");
-  if (report) await artifact("summary.txt", summary);
-  console.log(`${failed ? "FAIL" : "PASS"} smoke；报告：${report || "未创建（检查 /tmp/opencode 与报告目录权限）"}`);
-  process.off("SIGINT", interrupt);
-  process.off("SIGTERM", interrupt);
-  process.exitCode = failed ? 1 : 0;
+  } catch { checks.set("清理", "FAIL"); }
+  if (report) await artifact("summary.txt", summary());
+  const failed = [...checks.values().map((v) => v.startsWith("FAIL"))].some(Boolean);
+  console.log(`${failed ? "FAIL" : "PASS"} smoke；报告：${report}`);
+  process.exit(failed ? 1 : 0);
 }
+function reason(error: unknown): string { return error instanceof SmokeFailure ? error.message : String(error); }

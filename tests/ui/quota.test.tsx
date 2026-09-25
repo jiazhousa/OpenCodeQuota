@@ -3,10 +3,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { render } from "@opentui/solid";
 import { createTestRenderer } from "@opentui/core/testing";
-import type { TuiPluginMeta } from "@opencode-ai/plugin/tui";
 import { createQuotaPlugin } from "../../src/tui.tsx";
 import { Sidebar } from "../../src/ui/Sidebar.tsx";
-import { createFakeHost, flushPromises, themeFixture, viewFixture } from "../fixtures/fake-host.ts";
+import { createFakeV2Context, flushPromises, themeFixture, viewFixture } from "../fixtures/fake-host.ts";
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
@@ -18,27 +17,31 @@ async function renderer(width = 42, height = 80) {
 }
 
 describe("真实 OpenTUI 组件与 slot 挂载", () => {
-  test("生产入口注册：id、order600、sidebar_content 与唯一刷新命令", async () => {
+  test("生产入口注册：id、sidebar.content 追加位与 cleanup 幂等", async () => {
     const screen = await renderer(42, 30);
-    const host = createFakeHost({ renderer: screen.renderer });
-    cleanup.push(host.dispose);
+    const host = createFakeV2Context();
     const plugin = createQuotaPlugin();
     expect(plugin.id).toBe("opencode-channel-quota");
-    expect(plugin.server).toBeUndefined();
-    await plugin.tui(host.api, undefined, {} as TuiPluginMeta);
-    expect(host.registrations).toHaveLength(1);
-    // 原生 Context/MCP/LSP/Todo/Files 为 100–500；600 保证原生区块在前。
-    expect(host.registrations[0]!.order).toBe(600);
-    expect(Object.keys(host.registrations[0]!.slots)).toEqual(["sidebar_content"]);
-    // 详情页与 /quota 命令已随消费统计一并移除；仅保留 quota-refresh。
-    expect(host.commands.map((command) => ({ value: command.value, slash: command.slash?.name, category: command.category }))).toEqual([
-      { value: "quota.refresh", slash: "quota-refresh", category: "Quota" },
-    ]);
-    const Slot = host.Slot!;
-    await render(() => <Slot name="sidebar_content" mode="append" session_id="session-a" />, screen.renderer);
+    const dispose = await plugin.setup(host.ctx);
+    // 双 slot：sidebar.content（侧栏渲染）+ app（keymap 命令注册——sidebar 树无 KeymapProvider，官方 pattern）。
+    expect(host.claims).toHaveLength(2);
+    expect(host.claims[0]!.append).toBe("sidebar.content");
+    expect(host.claims[1]!.append).toBe("app");
+    expect(typeof host.claims[0]!.render).toBe("function");
+    await render(() => host.claims[0]!.render() as never, screen.renderer);
     await flushPromises(); await screen.renderOnce();
     expect(screen.captureCharFrame()).toContain("▼ Quota");
-    expect(host.registry!.getPluginErrors()).toHaveLength(0);
+    // app slot render 执行 keymap.layer 注册 /quota-refresh 命令（palette + slash）。
+    host.claims[1]!.render();
+    expect(host.layers).toHaveLength(1);
+    const layer = host.layers[0] as { mode: string; commands: Array<Record<string, unknown>> };
+    expect(layer.mode).toBe("global");
+    expect(layer.commands[0]!.id).toBe("quota.refresh");
+    expect(layer.commands[0]!.palette).toBe(true);
+    expect(layer.commands[0]!.slash).toEqual({ name: "quota-refresh" });
+    // cleanup（setup 返回值）：重复调用不得抛出。
+    dispose();
+    expect(() => dispose()).not.toThrow();
   });
 
   test("侧栏渲染英文水平条、渠道名与余额，点击折叠/恢复，错误状态英文提示", async () => {
